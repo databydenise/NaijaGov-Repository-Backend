@@ -77,6 +77,8 @@ target/
 
 # Jupyter Notebook
 .ipynb_checkpoints
+*.log
+__pycache__/
 
 # IPython
 profile_default/
@@ -216,3 +218,14 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+---Added myself---
+# Vector stores/ embeddings
+chroma/
+vectorstore/
+embeddings/
+
+# Local credentials/config
+secrets/
+credentials/
+
