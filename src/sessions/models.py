@@ -17,6 +17,7 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Index,
+    Integer,
     Text,
     func,
     text,
@@ -40,6 +41,10 @@ class Session(UUIDPk, TimestampMixin, Base):
     __table_args__ = (
         Index("ix_sessions_user_updated_at", "user_id", text("updated_at DESC")),
         Index("ix_sessions_expires_at", "expires_at"),
+        # One session per browser tab, enforced by the database. `/context` is called on
+        # every DOM mutation a busy portal makes, so two requests racing on the same tab
+        # is the normal case and not an edge one; this is what the upsert conflicts on.
+        Index("uq_sessions_user_tab", "user_id", "tab_id", unique=True),
     )
 
     user_id: Mapped[uuid.UUID] = mapped_column(
@@ -47,6 +52,11 @@ class Session(UUIDPk, TimestampMixin, Base):
         ForeignKey("users.id", ondelete="CASCADE"),
         nullable=False,
     )
+
+    # The browser's tab id. Null for a session not tied to one. Tab ids restart with the
+    # browser, so a row found under a given id may belong to a tab that no longer exists —
+    # reuse clears `history` when the row it found had expired.
+    tab_id: Mapped[int | None] = mapped_column(Integer)
 
     # Null until /context has identified the page. A portal that is retired should not
     # take a user's session history with it, so these clear rather than cascade.

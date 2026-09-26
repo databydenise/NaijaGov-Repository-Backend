@@ -5,7 +5,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException
 
-from src.constants import ErrorCode
+from src.constants import SAFE_MESSAGE_MARKER, ErrorCode
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +41,18 @@ async def validation_exception_handler(
     `input` key holding the value that failed, which for a signup body is the password — so
     `exc.errors()` must never be serialised into a response or a log line.
     """
+    safe = _safe_message(exc)
+
+    if safe is not None:
+        logger.warning(
+            "Request rejected: %s %s - %s",
+            request.method,
+            request.url.path,
+            safe,
+        )
+
+        return _invalid_request(safe)
+
     fields = sorted(
         {
             str(part)
@@ -62,13 +74,36 @@ async def validation_exception_handler(
     if fields:
         detail = f"Please check these and try again: {', '.join(fields)}."
 
+    return _invalid_request(detail)
+
+
+def _safe_message(exc: RequestValidationError) -> str | None:
+    """
+    The first validator message explicitly marked as safe to show, if there is one.
+
+    A validator that wants to explain itself — rather than have its field named in a list —
+    raises `ValueError(f"{SAFE_MESSAGE_MARKER} …")`. Only the literal behind the marker is
+    returned, and nothing from the error's `input`, so a rejected password cannot ride out
+    on a message.
+    """
+    for error in exc.errors():
+        message = str(error.get("msg", ""))
+
+        if SAFE_MESSAGE_MARKER in message:
+            return message.split(SAFE_MESSAGE_MARKER, maxsplit=1)[1].strip()
+
+    return None
+
+
+def _invalid_request(message: str) -> JSONResponse:
+    """A 400 in the error contract's shape."""
     return JSONResponse(
         status_code=400,
         content={
             "success": False,
             "error": {
-                "code": "INVALID_REQUEST",
-                "message": detail,
+                "code": ErrorCode.INVALID_REQUEST,
+                "message": message,
             },
         },
     )

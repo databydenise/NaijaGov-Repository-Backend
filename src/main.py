@@ -10,6 +10,7 @@ from src.auth.router import router as auth_router
 from src.cache import cached
 from src.config import settings
 from src.constants import PLACEHOLDER_RULES_CACHE_KEY
+from src.context.router import router as context_router
 from src.database.session import async_session_factory, engine
 from src.demo import service as demo_service
 from src.knowledge import service as knowledge_service
@@ -20,6 +21,7 @@ from src.exceptions.handlers import (
 )
 from src.logging import configure_logging
 from src.me.router import router as me_router
+from src.middlewares.body_limit import BodyLimitMiddleware
 from src.middlewares.response import response_transformer
 from src.profiles.router import router as profile_router
 from src.tokens.router import router as tokens_router
@@ -101,6 +103,10 @@ app.add_exception_handler(
 # Transform all responses to a standard format
 app.middleware("http")(response_transformer)
 
+# Outside the response transformer, so its own 413 is sent as written rather than wrapped
+# a second time. A body over the limit is refused before any route sees it.
+app.add_middleware(BodyLimitMiddleware)
+
 # Added last, so it wraps everything else and an error response still carries the CORS
 # headers the browser needs to let the web app read it.
 #
@@ -118,6 +124,7 @@ app.include_router(auth_router)
 app.include_router(tokens_router)
 app.include_router(profile_router)
 app.include_router(me_router)
+app.include_router(context_router)
 
 
 async def _placeholder_rule_count() -> int | None:

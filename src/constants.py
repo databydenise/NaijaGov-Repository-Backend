@@ -12,6 +12,14 @@ from typing import Final
 # `main.py` and the counted table belongs to `knowledge/`.
 PLACEHOLDER_RULES_CACHE_KEY = "knowledge:placeholder_rules"
 
+# Marks a validation message as one we wrote ourselves, so the exception handler may show
+# it to the caller verbatim. The handler otherwise reports field names only, because
+# pydantic's error objects carry the rejected input and that input can be a password.
+# A message behind this marker must therefore be a fixed literal that never interpolates
+# a submitted value.
+SAFE_MESSAGE_MARKER = "[safe]"
+
+
 
 class ErrorCode:
     """Codes callers may branch on. Adding one is a change to the published contract."""

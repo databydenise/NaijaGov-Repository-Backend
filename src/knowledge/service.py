@@ -9,6 +9,8 @@ from collections.abc import Sequence
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.cache import cached
+from src.knowledge.constants import RULES_CACHE_KEY_PREFIX, RULES_CACHE_TTL_SECONDS
 from src.knowledge.models import Rule
 from src.knowledge.schemas import RuleOut
 
@@ -38,6 +40,34 @@ async def get_rules_for_step(
     result = await db.execute(statement)
 
     return result.scalars().all()
+
+
+async def get_cached_rules_for_step(
+    db: AsyncSession,
+    workflow_id: str,
+    step_id: str,
+) -> list[RuleOut]:
+    """
+    A step's rules, cached for five minutes like the registry they belong to.
+
+    The seed is the only writer, so a stale copy costs at most one TTL after a re-seed.
+    Caching these is what leaves the session write as the only database work `/context`
+    does on a warm path, inside a 300 ms budget the user is watching.
+
+    Returns `RuleOut`, not ORM rows: a cached ORM instance outlives the session that
+    loaded it, and these are shared between requests.
+    """
+
+    async def load() -> list[RuleOut]:
+        rules = await get_rules_for_step(db, workflow_id, step_id)
+
+        return [to_rule_out(rule) for rule in rules]
+
+    return await cached(
+        f"{RULES_CACHE_KEY_PREFIX}{workflow_id}:{step_id}",
+        RULES_CACHE_TTL_SECONDS,
+        load,
+    )
 
 
 async def get_rule_for_field(

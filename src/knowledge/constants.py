@@ -35,3 +35,8 @@ SCORE_PRECISION: Final = 4
 # spend real time. An over-long URL is refused rather than truncated: a truncated URL can
 # match a pattern the full one would not, which is the wrong direction to fail in.
 MAX_URL_LENGTH: Final = 2048
+
+# Rules change only when the seed runs, and `/context` loads a step's rules on every page
+# read. Same window as the registry cache, for the same reason.
+RULES_CACHE_TTL_SECONDS: Final = 300
+RULES_CACHE_KEY_PREFIX: Final = "knowledge:rules:"

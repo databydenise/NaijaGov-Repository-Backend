@@ -7,7 +7,8 @@ even if the cleanup CLI has not run for a week.
 import uuid
 from datetime import timedelta
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import case, delete, func, select, text
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.config import settings
@@ -69,6 +70,86 @@ async def get_or_create_session(
     await db.flush()
 
     return session
+
+
+async def get_session_for_tab(
+    db: AsyncSession,
+    user_id: uuid.UUID,
+    tab_id: int,
+) -> Session | None:
+    """
+    The live session for this user's tab, or None.
+
+    Filters the expiry here rather than in the caller, so an expired row can never be
+    handed back as a cache hit even if the cleanup CLI has not run.
+    """
+    statement = select(Session).where(
+        Session.user_id == user_id,
+        Session.tab_id == tab_id,
+        Session.expires_at > func.now(),
+    )
+
+    result = await db.execute(statement)
+
+    return result.scalar_one_or_none()
+
+
+async def upsert_tab_session(
+    db: AsyncSession,
+    user_id: uuid.UUID,
+    tab_id: int,
+    workflow_id: str | None,
+    step_id: str | None,
+    page_hash: str,
+    cached_rule_ids: list[str],
+) -> Session:
+    """
+    Write this tab's session, replacing whatever it held.
+
+    One statement, conflicting on `(user_id, tab_id)`: `/context` is called on every DOM
+    mutation, so two requests racing on one tab is ordinary rather than exceptional, and a
+    read-then-write would leave two rows.
+
+    `history` is cleared when the row being replaced had already expired. A browser reuses
+    tab ids after a restart, so the row found under this id can belong to a tab that no
+    longer exists — carrying its chat forward would show one page's conversation on
+    another, after the point where it was meant to have been forgotten.
+    """
+    expires_at = func.now() + timedelta(hours=settings.session_ttl_hours)
+
+    statement = (
+        insert(Session)
+        .values(
+            user_id=user_id,
+            tab_id=tab_id,
+            workflow_id=workflow_id,
+            step_id=step_id,
+            page_hash=page_hash,
+            cached_rule_ids=cached_rule_ids,
+            expires_at=expires_at,
+        )
+        .on_conflict_do_update(
+            index_elements=[Session.user_id, Session.tab_id],
+            set_={
+                "workflow_id": workflow_id,
+                "step_id": step_id,
+                "page_hash": page_hash,
+                "cached_rule_ids": cached_rule_ids,
+                "expires_at": expires_at,
+                "history": case(
+                    (Session.expires_at <= func.now(), text("'[]'::jsonb")),
+                    else_=Session.history,
+                ),
+            },
+        )
+        .returning(Session)
+    )
+
+    # populate_existing, because a Session already in this session's identity map would
+    # otherwise come back with its pre-write values.
+    result = await db.execute(statement, execution_options={"populate_existing": True})
+
+    return result.scalar_one()
 
 
 def trim_history(history: list[dict[str, object]]) -> list[dict[str, object]]:
