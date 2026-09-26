@@ -8,7 +8,7 @@ carries a unique index and that lookup is a single index hit.
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, Text, func
+from sqlalchemy import DateTime, ForeignKey, Index, Text, func, text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -17,6 +17,17 @@ from src.database.base import Base, UUIDPk
 
 class ExtensionToken(UUIDPk, Base):
     __tablename__ = "extension_tokens"
+    __table_args__ = (
+        # One active token per user, enforced by the database and not only by the code
+        # that issues them. The predicate deliberately omits the expiry: `now()` is not
+        # immutable, so it cannot appear in an index. Expiry stays a query filter.
+        Index(
+            "uq_extension_tokens_one_active",
+            "user_id",
+            unique=True,
+            postgresql_where=text("revoked_at IS NULL"),
+        ),
+    )
 
     user_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
@@ -26,6 +37,10 @@ class ExtensionToken(UUIDPk, Base):
     )
 
     token_hash: Mapped[str] = mapped_column(Text, nullable=False, unique=True)
+
+    # The last four characters of the raw token, for display. The raw value is
+    # unrecoverable by design, so without this the profile page has nothing to show.
+    last4: Mapped[str | None] = mapped_column(Text)
 
     # Human label, e.g. "Work laptop". Set when the web app issues the token.
     label: Mapped[str | None] = mapped_column(Text)

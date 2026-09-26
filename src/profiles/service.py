@@ -19,6 +19,37 @@ async def get_profile(db: AsyncSession, user_id: uuid.UUID) -> Profile | None:
     return result.scalar_one_or_none()
 
 
+async def ensure_profile(db: AsyncSession, user_id: uuid.UUID) -> Profile:
+    """
+    The user's profile, created empty if it does not exist yet.
+
+    Called from the auth dependency so no downstream code has to handle a missing row. It
+    must not bump `version`: creating the row a user was always going to have is not an
+    edit, and the extension uses `version` to decide whether its cached profile is stale.
+    """
+    statement = (
+        insert(Profile)
+        .values(user_id=user_id)
+        .on_conflict_do_nothing(index_elements=[Profile.user_id])
+        .returning(Profile)
+    )
+
+    result = await db.execute(statement)
+    profile = result.scalar_one_or_none()
+
+    if profile is not None:
+        return profile
+
+    # Nothing was returned, so the row already existed.
+    existing = await get_profile(db, user_id)
+
+    if existing is None:  # pragma: no cover - only reachable if the row vanished mid-call
+        message = f"Profile for {user_id} could neither be created nor read"
+        raise RuntimeError(message)
+
+    return existing
+
+
 async def upsert_profile(
     db: AsyncSession,
     user_id: uuid.UUID,

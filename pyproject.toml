@@ -17,8 +17,9 @@ dependencies = [
     "sqlalchemy[asyncio]>=2.0.44",
     "asyncpg>=0.30.0",
     "alembic>=1.16.5",
-    # Auth — argon2id password hashing (column producer lands in B3)
+    # Auth — argon2id password hashing, HS256 session JWTs
     "argon2-cffi>=25.1.0",
+    "pyjwt>=2.10.1",
     # Outbound HTTP and monitoring
     "httpx>=0.28.1",
     "sentry-sdk>=2.70.0",
