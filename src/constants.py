@@ -8,6 +8,10 @@ verbatim — plain English, no jargon, and a next step where one exists.
 
 from typing import Final
 
+# `/health`'s count of demo rules. Here rather than in `workflows/` because the reporter is
+# `main.py` and the counted table belongs to `knowledge/`.
+PLACEHOLDER_RULES_CACHE_KEY = "knowledge:placeholder_rules"
+
 
 class ErrorCode:
     """Codes callers may branch on. Adding one is a change to the published contract."""

@@ -1,29 +1,25 @@
 [
   {
-    "id": "sample_bn.applicant",
-    "workflow_id": "sample_bn",
-    "name": "Applicant details",
-    "index": 0,
+    "id": "demo_reg.applicant",
+    "workflow_id": "demo_reg",
+    "name": "Applicant Information",
+    "index": 1,
     "field_labels": [
-      "Full name",
-      "Email address",
-      "Phone number",
-      "Residential address",
+      "Full Name",
+      "Email Address",
+      "Phone Number",
       "State",
-      "Local government area"
+      "Local Government Area",
+      "Business Type"
     ],
     "is_final": false
   },
   {
-    "id": "sample_bn.proposed_name",
-    "workflow_id": "sample_bn",
-    "name": "Proposed business name",
-    "index": 1,
-    "field_labels": [
-      "Proposed business name",
-      "Alternative business name",
-      "Nature of business"
-    ],
+    "id": "demo_reg.verification",
+    "workflow_id": "demo_reg",
+    "name": "Verification & Submit",
+    "index": 2,
+    "field_labels": ["Password", "One-Time Code", "Declaration"],
     "is_final": true
   }
 ]

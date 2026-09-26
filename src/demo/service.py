@@ -39,7 +39,10 @@ DEMO_TOKEN_LABEL = "Demo device"  # noqa: S105 - this is a display label, not a 
 DEMO_PROFILE = {
     "full_name": "Demo User",
     "email": "demo@example.com",
-    "phone": "+234 000 000 0000",
+    # Eleven digits starting with zero, because that is what the seeded rule for the
+    # Phone Number field requires. A demo profile that fails its own workflow's rule makes
+    # the fill preview contradict the explanation shown beside it.
+    "phone": "08000000000",
     "address": "000 Example Close, Demo District",
     "state": "Example State",
     "lga": "Example LGA",

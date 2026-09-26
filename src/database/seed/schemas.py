@@ -26,7 +26,13 @@ class WorkflowStepSeed(SeedModel):
     id: str = Field(min_length=1)
     workflow_id: str = Field(min_length=1)
     name: str = Field(min_length=1)
-    index: int = Field(ge=0)
+
+    # Steps are numbered from 1, as a portal presents them. Contiguity within a workflow is
+    # checked in the loader, which is the only place that can see the whole set.
+    index: int = Field(ge=1)
+
+    # Raw labels, exactly as the page renders them. Normalisation belongs to the matcher in
+    # B8; keeping them unnormalised here is what lets a human compare this file to the page.
     field_labels: list[str] = Field(default_factory=list)
     is_final: bool = False
 
@@ -42,3 +48,7 @@ class RuleSeed(SeedModel):
     # No default on either. A rule with no source is not a rule.
     source_url: AnyHttpUrl
     last_checked: date
+
+    # No default either, and deliberately so: an omitted flag would silently mean "official",
+    # which is the one mistake this column exists to prevent. Every rule states which it is.
+    is_placeholder: bool

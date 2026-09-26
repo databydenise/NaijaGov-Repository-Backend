@@ -1,22 +1,68 @@
 [
   {
-    "id": "sample_bn.applicant.full_name",
-    "workflow_id": "sample_bn",
-    "step_id": "sample_bn.applicant",
-    "topic": "applicant identity",
-    "field_label": "Full name",
-    "requirement": "Placeholder rule for the sample workflow: the applicant's name must be entered exactly as it appears on the identification they will present, surname first.",
-    "source_url": "https://services.example.gov.ng/business-name/help/applicant-details",
-    "last_checked": "2026-09-01"
+    "id": "demo_reg.applicant.full_name",
+    "workflow_id": "demo_reg",
+    "step_id": "demo_reg.applicant",
+    "topic": "Name as it appears on ID",
+    "field_label": "Full Name",
+    "requirement": "Enter your name exactly as it is written on the identification you will present, including any middle name. If the name here does not match the ID you upload later, the application is returned for correction.",
+    "source_url": "https://portal.example.gov.ng/registration/help/applicant-name",
+    "last_checked": "2026-09-26",
+    "is_placeholder": true
   },
   {
-    "id": "sample_bn.proposed_name.availability",
-    "workflow_id": "sample_bn",
-    "step_id": "sample_bn.proposed_name",
-    "topic": "name availability",
-    "field_label": "Proposed business name",
-    "requirement": "Placeholder rule for the sample workflow: an alternative name is required in case the proposed name is unavailable, and neither name may claim government affiliation.",
-    "source_url": "https://services.example.gov.ng/business-name/help/name-availability",
-    "last_checked": "2026-09-01"
+    "id": "demo_reg.applicant.email",
+    "workflow_id": "demo_reg",
+    "step_id": "demo_reg.applicant",
+    "topic": "Where notices are sent",
+    "field_label": "Email Address",
+    "requirement": "Every notice about this application is sent to this address, including the one-time code used at the final step. Use an address you can open now, because the code is needed before the application can be submitted.",
+    "source_url": "https://portal.example.gov.ng/registration/help/contact-details",
+    "last_checked": "2026-09-26",
+    "is_placeholder": true
+  },
+  {
+    "id": "demo_reg.applicant.phone",
+    "workflow_id": "demo_reg",
+    "step_id": "demo_reg.applicant",
+    "topic": "Accepted phone format",
+    "field_label": "Phone Number",
+    "requirement": "Enter an eleven-digit Nigerian mobile number beginning with zero, with no spaces or dashes. A number entered in international form is rejected by the page rather than converted.",
+    "source_url": "https://portal.example.gov.ng/registration/help/contact-details",
+    "last_checked": "2026-09-26",
+    "is_placeholder": true
+  },
+  {
+    "id": "demo_reg.applicant.lga",
+    "workflow_id": "demo_reg",
+    "step_id": "demo_reg.applicant",
+    "topic": "What an LGA is",
+    "field_label": "Local Government Area",
+    "requirement": "A Local Government Area is the administrative division below a state, and the list here only fills in once a state is chosen. Pick the LGA of the address you gave, not the one you were born in.",
+    "source_url": "https://portal.example.gov.ng/registration/help/address",
+    "last_checked": "2026-09-26",
+    "is_placeholder": true
+  },
+  {
+    "id": "demo_reg.applicant.business_type",
+    "workflow_id": "demo_reg",
+    "step_id": "demo_reg.applicant",
+    "topic": "Choosing between the options",
+    "field_label": "Business Type",
+    "requirement": "Choose Sole Proprietorship if you are the only owner, or Partnership if two or more people own the business together. The choice sets which documents are asked for later and cannot be changed after submission.",
+    "source_url": "https://portal.example.gov.ng/registration/help/business-type",
+    "last_checked": "2026-09-26",
+    "is_placeholder": true
+  },
+  {
+    "id": "demo_reg.verification.otp",
+    "workflow_id": "demo_reg",
+    "step_id": "demo_reg.verification",
+    "topic": "Why the Copilot stops here",
+    "field_label": "One-Time Code",
+    "requirement": "The code is sent to the email address given on the first step and is entered by you, not filled in for you. This step submits the application, so nothing here is completed automatically and the declaration must be read before it is agreed to.",
+    "source_url": "https://portal.example.gov.ng/registration/help/verification",
+    "last_checked": "2026-09-26",
+    "is_placeholder": true
   }
 ]

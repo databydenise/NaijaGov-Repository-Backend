@@ -1,11 +1,11 @@
 [
   {
-    "id": "sample_bn",
-    "agency": "Sample Business Registry (placeholder)",
-    "name": "Business Name Registration (sample workflow)",
+    "id": "demo_reg",
+    "agency": "National Services Portal (Demo)",
+    "name": "Business Name Registration (Demo)",
     "url_patterns": [
-      "^https://services\\.example\\.gov\\.ng/business-name/register",
-      "^https://services\\.example\\.gov\\.ng/business-name/register/.*"
+      "^https?://localhost:5174/.*",
+      "^https://portal\\.example\\.gov\\.ng/registration/.*"
     ],
     "is_active": true
   }

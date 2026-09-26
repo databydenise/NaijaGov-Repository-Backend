@@ -7,9 +7,12 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 
 from src.auth.router import router as auth_router
+from src.cache import cached
 from src.config import settings
+from src.constants import PLACEHOLDER_RULES_CACHE_KEY
 from src.database.session import async_session_factory, engine
 from src.demo import service as demo_service
+from src.knowledge import service as knowledge_service
 from src.exceptions.handlers import (
     general_exception_handler,
     http_exception_handler,
@@ -20,6 +23,7 @@ from src.me.router import router as me_router
 from src.middlewares.response import response_transformer
 from src.profiles.router import router as profile_router
 from src.tokens.router import router as tokens_router
+from src.workflows.constants import REGISTRY_CACHE_TTL_SECONDS
 
 # Redaction is installed before anything can log: no password, token, JWT, or cookie value
 # reaches a handler even if a log line asks for one.
@@ -116,12 +120,47 @@ app.include_router(profile_router)
 app.include_router(me_router)
 
 
-@app.get("/health")
-async def health_check() -> dict[str, str | bool]:
+async def _placeholder_rule_count() -> int | None:
     """
-    Liveness, plus whether this instance is running the demo account.
+    How many stored rules are demo content, or None if the database did not answer.
+
+    Cached, because `/health` is polled and this is a count over a table that changes only
+    on a seed. A failure degrades to None instead of raising: `/health` is a liveness check
+    first, and an instance that is up should say so even when the database is not.
+    """
+    try:
+        return await cached(
+            PLACEHOLDER_RULES_CACHE_KEY,
+            REGISTRY_CACHE_TTL_SECONDS,
+            _count_placeholder_rules,
+        )
+    except Exception as exc:  # noqa: BLE001  # liveness must survive a database failure
+        logger.warning(
+            "Could not read the placeholder rule count (%s)",
+            type(exc).__name__,
+        )
+
+        return None
+
+
+async def _count_placeholder_rules() -> int:
+    """The count, on its own short-lived session."""
+    async with async_session_factory() as db:
+        return await knowledge_service.count_placeholder_rules(db)
+
+
+@app.get("/health")
+async def health_check() -> dict[str, str | bool | int | None]:
+    """
+    Liveness, plus what this instance is serving.
 
     `demo_mode` is reported rather than kept quiet: an instance with a known password and a
-    long-lived token should say so out loud.
+    long-lived token should say so out loud. `placeholder_rules` is the same idea for
+    content — nobody should have to query the database to find out that every rule being
+    served is invented. It is `null` when the database could not be reached.
     """
-    return {"status": "Okay", "demo_mode": settings.demo_mode}
+    return {
+        "status": "Okay",
+        "demo_mode": settings.demo_mode,
+        "placeholder_rules": await _placeholder_rule_count(),
+    }

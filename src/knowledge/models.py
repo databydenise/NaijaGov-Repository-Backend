@@ -7,7 +7,7 @@ only in the prompt.
 
 from datetime import date
 
-from sqlalchemy import Date, ForeignKey, Index, Text
+from sqlalchemy import Boolean, Date, ForeignKey, Index, Text, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from src.database.base import Base, TimestampMixin
@@ -47,3 +47,13 @@ class Rule(TimestampMixin, Base):
     # Shown with every answer that uses this rule.
     source_url: Mapped[str] = mapped_column(Text, nullable=False)
     last_checked: Mapped[date] = mapped_column(Date, nullable=False)
+
+    # True for invented demo content. It travels with every rule reference an API response
+    # carries, because a plausible requirement with a `.gov.ng` source is indistinguishable
+    # from a real one unless something says otherwise. Defaults to false so a rule can only
+    # be unflagged deliberately.
+    is_placeholder: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        server_default=text("false"),
+    )

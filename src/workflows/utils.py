@@ -2,6 +2,9 @@
 
 import re
 
+# Hosts that only mean anything on a developer's machine.
+LOCAL_HOST_NAMES = frozenset({"localhost", "127.0.0.1", "0.0.0.0", "[::1]"})  # noqa: S104
+
 # `^https://`, `https://`, `^https?://`, and the same for http, with or without the anchor.
 _SCHEME = re.compile(r"^\^?https?(?:\?)?://")
 
@@ -40,3 +43,10 @@ def host_from_pattern(pattern: str) -> str | None:
         return None
 
     return host
+
+
+def is_local_host(host: str) -> bool:
+    """Whether a host only resolves on the machine running the code, port ignored."""
+    name = host.rsplit(":", maxsplit=1)[0] if not host.endswith("]") else host
+
+    return name in LOCAL_HOST_NAMES

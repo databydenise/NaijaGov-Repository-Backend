@@ -20,6 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from src.database.seed.exceptions import SeedValidationError
 from src.database.seed.schemas import RuleSeed, WorkflowSeed, WorkflowStepSeed
+from src.database.seed.validate import check_seed_data
 from src.database.session import create_cli_engine
 from src.knowledge.models import Rule
 from src.workflows.models import Workflow, WorkflowStep
@@ -51,38 +52,12 @@ def load_seed_data() -> tuple[
     list[WorkflowStepSeed],
     list[RuleSeed],
 ]:
-    """
-    Validate all three files, and check that they refer to each other consistently.
-
-    Cross-file checks run here rather than relying on the foreign keys, so a broken seed
-    fails with the offending id rather than with an integrity error.
-    """
+    """Validate all three files, then check them against each other."""
     workflows = _load(WORKFLOWS_FILE, TypeAdapter(list[WorkflowSeed]))
     steps = _load(STEPS_FILE, TypeAdapter(list[WorkflowStepSeed]))
     rules = _load(RULES_FILE, TypeAdapter(list[RuleSeed]))
 
-    workflow_ids = {workflow.id for workflow in workflows}
-    step_ids = {step.id for step in steps}
-
-    for step in steps:
-        if step.workflow_id not in workflow_ids:
-            raise SeedValidationError(
-                f"Step {step.id} references unknown workflow {step.workflow_id}",
-            )
-        if not step.id.startswith(f"{step.workflow_id}."):
-            raise SeedValidationError(
-                f"Step id {step.id} must be prefixed with its workflow id",
-            )
-
-    for rule in rules:
-        if rule.workflow_id not in workflow_ids:
-            raise SeedValidationError(
-                f"Rule {rule.id} references unknown workflow {rule.workflow_id}",
-            )
-        if rule.step_id is not None and rule.step_id not in step_ids:
-            raise SeedValidationError(
-                f"Rule {rule.id} references unknown step {rule.step_id}",
-            )
+    check_seed_data(workflows, steps, rules)
 
     return workflows, steps, rules
 
@@ -154,10 +129,14 @@ async def seed(*, reset_reference: bool = False) -> dict[str, int]:
     finally:
         await engine.dispose()
 
+    # The placeholder count is in the summary on purpose: it should look wrong once real
+    # content lands, and nobody should have to query the database to notice.
     logger.info(
-        "Seed complete (reset_reference=%s): %s",
-        reset_reference,
-        written,
+        "registry: %d workflow(s), %d step(s), %d rule(s) (%d placeholder)",
+        written["workflows"],
+        written["workflow_steps"],
+        written["rules"],
+        sum(1 for rule in rules if rule.is_placeholder),
     )
 
     return written
