@@ -229,3 +229,8 @@ embeddings/
 secrets/
 credentials/
 
+claude.md
+context
+.claude
+# macOS
+.DS_Store

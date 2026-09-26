@@ -1,0 +1,22 @@
+[
+  {
+    "id": "sample_bn.applicant.full_name",
+    "workflow_id": "sample_bn",
+    "step_id": "sample_bn.applicant",
+    "topic": "applicant identity",
+    "field_label": "Full name",
+    "requirement": "Placeholder rule for the sample workflow: the applicant's name must be entered exactly as it appears on the identification they will present, surname first.",
+    "source_url": "https://services.example.gov.ng/business-name/help/applicant-details",
+    "last_checked": "2026-09-01"
+  },
+  {
+    "id": "sample_bn.proposed_name.availability",
+    "workflow_id": "sample_bn",
+    "step_id": "sample_bn.proposed_name",
+    "topic": "name availability",
+    "field_label": "Proposed business name",
+    "requirement": "Placeholder rule for the sample workflow: an alternative name is required in case the proposed name is unavailable, and neither name may claim government affiliation.",
+    "source_url": "https://services.example.gov.ng/business-name/help/name-availability",
+    "last_checked": "2026-09-01"
+  }
+]

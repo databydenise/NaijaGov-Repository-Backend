@@ -1,0 +1,29 @@
+[
+  {
+    "id": "sample_bn.applicant",
+    "workflow_id": "sample_bn",
+    "name": "Applicant details",
+    "index": 0,
+    "field_labels": [
+      "Full name",
+      "Email address",
+      "Phone number",
+      "Residential address",
+      "State",
+      "Local government area"
+    ],
+    "is_final": false
+  },
+  {
+    "id": "sample_bn.proposed_name",
+    "workflow_id": "sample_bn",
+    "name": "Proposed business name",
+    "index": 1,
+    "field_labels": [
+      "Proposed business name",
+      "Alternative business name",
+      "Nature of business"
+    ],
+    "is_final": true
+  }
+]
