@@ -16,7 +16,9 @@ from src.exceptions.handlers import (
     validation_exception_handler,
 )
 from src.logging import configure_logging
+from src.me.router import router as me_router
 from src.middlewares.response import response_transformer
+from src.profiles.router import router as profile_router
 from src.tokens.router import router as tokens_router
 
 # Redaction is installed before anything can log: no password, token, JWT, or cookie value
@@ -110,6 +112,8 @@ app.add_middleware(
 
 app.include_router(auth_router)
 app.include_router(tokens_router)
+app.include_router(profile_router)
+app.include_router(me_router)
 
 
 @app.get("/health")

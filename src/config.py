@@ -73,6 +73,12 @@ class Settings(BaseSettings):
     # --- Extension tokens ---
     token_ttl_days: int = 30
 
+    # --- Supported hosts ---
+    # Hosts `/me` reports as supported on top of those derived from the workflow registry,
+    # outside production only. The default is the local mock portal the extension is
+    # developed against. Set as a JSON list, e.g. DEV_SUPPORTED_HOSTS='["localhost:5174"]'.
+    dev_supported_hosts: list[str] = ["localhost:5174"]
+
     # --- Chat/fill sessions in the database. Not the web session above; the two are
     # different lifetimes on purpose and the names are the spec's. ---
     session_ttl_hours: int = 24
@@ -130,6 +136,14 @@ class Settings(BaseSettings):
     def cors_origins(self) -> list[str]:
         """Exactly the origins we serve, with no empty entries."""
         return [origin for origin in (self.web_origin, self.extension_origin) if origin]
+
+    @cached_property
+    def extra_supported_hosts(self) -> list[str]:
+        """The dev hosts, or nothing in production."""
+        if self.env == "production":
+            return []
+
+        return self.dev_supported_hosts
 
 
 def _refuse_demo_mode_in_production(loaded: Settings) -> None:

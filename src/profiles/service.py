@@ -7,9 +7,10 @@ from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.profiles.constants import EDITABLE_FIELDS
+from src.profiles.constants import EDITABLE_FIELDS, PROFILE_FIELDS
 from src.profiles.exceptions import UnknownProfileField
 from src.profiles.models import Profile
+from src.profiles.schemas import Completeness, ProfileOut, ProfileResponse
 
 
 async def get_profile(db: AsyncSession, user_id: uuid.UUID) -> Profile | None:
@@ -48,6 +49,60 @@ async def ensure_profile(db: AsyncSession, user_id: uuid.UUID) -> Profile:
         raise RuntimeError(message)
 
     return existing
+
+
+async def load_profile(db: AsyncSession, user_id: uuid.UUID) -> Profile:
+    """
+    The user's profile for a read endpoint, with no query when it is already loaded.
+
+    `require_user` has run `ensure_profile` in this same session, so `db.get` answers from
+    the identity map. `require_token` has not, so there it costs one primary-key SELECT,
+    and falls back to creating the row only for an account that somehow lacks one.
+    """
+    profile = await db.get(Profile, user_id)
+
+    if profile is not None:
+        return profile
+
+    return await ensure_profile(db, user_id)
+
+
+def to_profile_out(profile: Profile) -> ProfileOut:
+    """The row as the API shows it. Only the fillable fields, never the ids."""
+    return ProfileOut.model_validate(
+        {field: getattr(profile, field) for field in PROFILE_FIELDS},
+    )
+
+
+def compute_completeness(profile: ProfileOut) -> Completeness:
+    """
+    Which fields are filled. A whitespace-only value counts as missing.
+
+    Counted, not stored, so it can never disagree with the row it describes.
+    """
+    values = profile.model_dump()
+    missing = [
+        field for field in PROFILE_FIELDS if not (values[field] or "").strip()
+    ]
+
+    return Completeness(
+        filled=len(PROFILE_FIELDS) - len(missing),
+        total=len(PROFILE_FIELDS),
+        missing=missing,
+    )
+
+
+async def read_profile(db: AsyncSession, user_id: uuid.UUID) -> ProfileResponse:
+    """`GET /profile`: the profile, its version, and how complete it is."""
+    profile = await load_profile(db, user_id)
+    profile_out = to_profile_out(profile)
+
+    return ProfileResponse(
+        profile=profile_out,
+        version=profile.version,
+        updated_at=profile.updated_at,
+        completeness=compute_completeness(profile_out),
+    )
 
 
 async def upsert_profile(

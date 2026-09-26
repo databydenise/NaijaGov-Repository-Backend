@@ -5,6 +5,8 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException
 
+from src.constants import ErrorCode
+
 logger = logging.getLogger(__name__)
 
 
@@ -76,6 +78,12 @@ async def general_exception_handler(
     request: Request,
     _exc: Exception,
 ) -> JSONResponse:
+    """
+    500, in the contract shape, with nothing from the exception in the body.
+
+    An unreachable database lands here. The message says what to do, never what failed:
+    the exception's text can carry SQL or a connection string.
+    """
     logger.exception(
         "Unhandled exception: %s %s",
         request.method,
@@ -87,7 +95,8 @@ async def general_exception_handler(
         content={
             "success": False,
             "error": {
-                "message": "Internal server error",
+                "code": ErrorCode.INTERNAL,
+                "message": "Something went wrong on our side. Please try again shortly.",
             },
         },
     )

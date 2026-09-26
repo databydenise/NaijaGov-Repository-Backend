@@ -30,6 +30,16 @@ async def get_token_by_hash(db: AsyncSession, token_hash: str) -> ExtensionToken
     return result.scalar_one_or_none()
 
 
+async def get_token_by_id(db: AsyncSession, token_id: uuid.UUID) -> ExtensionToken | None:
+    """
+    The token row with this id, in any state. Never use this to authenticate.
+
+    For reading a token `require_token` has already verified in this session: `db.get`
+    answers from the identity map, so `/me` gets `expires_at` and `last4` without a query.
+    """
+    return await db.get(ExtensionToken, token_id)
+
+
 async def touch_token(db: AsyncSession, token_id: uuid.UUID) -> None:
     """Record that a token was used just now."""
     statement = (
