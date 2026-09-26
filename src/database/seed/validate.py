@@ -6,31 +6,30 @@ set. They run here rather than relying on the foreign keys so a broken seed name
 offending id instead of failing with an integrity error halfway through a write.
 """
 
-import re
-
 from src.database.seed.exceptions import SeedValidationError
 from src.database.seed.schemas import RuleSeed, WorkflowSeed, WorkflowStepSeed
+from src.workflows.utils import pattern_rejection_reason
 
 FIRST_STEP_INDEX = 1
 
 
-def _check_patterns_compile(workflows: list[WorkflowSeed]) -> None:
+def _check_patterns_safe(workflows: list[WorkflowSeed]) -> None:
     """
-    Every `url_patterns` entry must compile.
+    Every `url_patterns` entry must compile, and must be cheap to run.
 
     A pattern that does not compile would raise in the matcher on a live page instead of
-    here, where the file that holds it can be named.
+    here, where the file that holds it can be named. One that backtracks catastrophically
+    is worse: it would hang a request on a public endpoint, and `re` cannot be interrupted.
     """
     for workflow in workflows:
         for pattern in workflow.url_patterns:
-            try:
-                re.compile(pattern)
-            except re.error as exc:
+            reason = pattern_rejection_reason(pattern)
+
+            if reason is not None:
                 message = (
-                    f"Workflow {workflow.id} has a url_pattern that is not a valid "
-                    f"regex ({exc}): {pattern}"
+                    f"Workflow {workflow.id} has a url_pattern that {reason}: {pattern}"
                 )
-                raise SeedValidationError(message) from exc
+                raise SeedValidationError(message)
 
 
 def _check_step_indexes(steps: list[WorkflowStepSeed]) -> None:
@@ -137,7 +136,7 @@ def check_seed_data(
     steps_by_id = {step.id: step for step in steps}
 
     _check_unique_ids(workflows, steps, rules)
-    _check_patterns_compile(workflows)
+    _check_patterns_safe(workflows)
     _check_step_references(steps, workflow_ids)
     _check_step_indexes(steps)
     _check_rule_references(rules, workflow_ids, steps_by_id)

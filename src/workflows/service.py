@@ -22,7 +22,11 @@ from src.workflows.constants import (
 )
 from src.workflows.models import Workflow, WorkflowStep
 from src.workflows.schemas import ActiveWorkflow, Step
-from src.workflows.utils import host_from_pattern, is_local_host
+from src.workflows.utils import (
+    host_from_pattern,
+    is_local_host,
+    pattern_rejection_reason,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -41,20 +45,27 @@ def _to_active_workflow(workflow: Workflow) -> ActiveWorkflow:
     """
     One row, with its patterns compiled.
 
-    A pattern that does not compile is dropped with a warning rather than raised: the seed
-    already rejects those, so reaching here means the row was written another way, and one
-    bad pattern should not take `/context` down for every other workflow.
+    A pattern the guard rejects is dropped with a warning rather than raised: the seed
+    already refuses those, so reaching here means the row was written another way, and one
+    bad pattern should not take `/context` down for every other workflow. The warning names
+    the workflow and the reason, never the pattern — a row written outside the seed is
+    exactly the kind of value not to echo into a log.
     """
     patterns = []
 
     for pattern in workflow.url_patterns:
-        try:
-            patterns.append(re.compile(pattern))
-        except re.error:
+        reason = pattern_rejection_reason(pattern)
+
+        if reason is not None:
             logger.warning(
-                "Workflow %s has a url_pattern that does not compile; skipping it",
+                "Workflow %s has a url_pattern that %s; skipping it",
                 workflow.id,
+                reason,
             )
+
+            continue
+
+        patterns.append(re.compile(pattern))
 
     return ActiveWorkflow(
         id=workflow.id,
