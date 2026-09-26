@@ -37,14 +37,16 @@ RULES_FILE = DATA_DIR / "rules.json"
 def _load(path: Path, adapter: TypeAdapter[Any]) -> Any:  # noqa: ANN401
     """Read one JSON file and validate it, naming the file if it fails."""
     if not path.exists():
-        raise SeedValidationError(f"Missing seed file: {path.name}")
+        message = f"Missing seed file: {path.name}"
+        raise SeedValidationError(message)
 
     raw = json.loads(path.read_text(encoding="utf-8"))
 
     try:
         return adapter.validate_python(raw)
     except ValidationError as exc:
-        raise SeedValidationError(f"{path.name} is invalid:\n{exc}") from exc
+        message: str = f"{path.name} is invalid:\n{exc}"
+        raise SeedValidationError(message) from exc
 
 
 def load_seed_data() -> tuple[

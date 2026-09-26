@@ -58,7 +58,7 @@ def _scrub(value: Any) -> Any:  # noqa: ANN401  # log args are arbitrary
             key: (REDACTED if str(key).lower() in SENSITIVE_KEYS else _scrub(item))
             for key, item in value.items()
         }
-    if isinstance(value, (list, tuple, set)):
+    if isinstance(value, list | tuple | set):
         return type(value)(_scrub(item) for item in value)
 
     return value

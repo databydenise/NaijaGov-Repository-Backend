@@ -1,4 +1,5 @@
-"""Portals and their steps.
+"""
+Portals and their steps.
 
 Ids are readable text (`cac_bn`, `cac_bn.proprietor`), not UUIDs: they appear in seeds,
 prompts, logs, and bug reports, and `cac_bn.proprietor` in a log line is worth more than a
@@ -36,7 +37,9 @@ class Workflow(TimestampMixin, Base):
 class WorkflowStep(TimestampMixin, Base):
     __tablename__ = "workflow_steps"
     __table_args__ = (
-        UniqueConstraint("workflow_id", "index", name="uq_workflow_steps_workflow_index"),
+        UniqueConstraint(
+            "workflow_id", "index", name="uq_workflow_steps_workflow_index"
+        ),
     )
 
     # `<workflow_id>.<key>`
