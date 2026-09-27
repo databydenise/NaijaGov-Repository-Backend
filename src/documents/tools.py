@@ -65,7 +65,7 @@ SEARCH_TOOL_PARAMETERS: Final[dict[str, Any]] = {
         "service": {
             "type": "string",
             "description": (
-                "Restrict to one service, e.g. \"Driver's Licence\". Omit to search "
+                'Restrict to one service, e.g. "Driver\'s Licence". Omit to search '
                 "everything."
             ),
         },
@@ -86,7 +86,8 @@ SEARCH_TOOL: Final[dict[str, Any]] = {
 
 
 def chunk_to_tool_item(chunk: RetrievedChunk) -> dict[str, Any]:
-    """One chunk as the model sees it.
+    """
+    One chunk as the model sees it.
 
     `chunk_id` is not decoration: the guard in P3 checks every citation against the ids
     that were actually retrieved, and a citation it cannot match is dropped. Distance is
@@ -104,7 +105,8 @@ def chunk_to_tool_item(chunk: RetrievedChunk) -> dict[str, Any]:
 
 
 def result_to_tool_payload(result: RetrievalResult) -> dict[str, Any]:
-    """The tool's JSON result.
+    """
+    The tool's JSON result.
 
     The three outcomes are kept apart, because they call for different answers:
 

@@ -1,0 +1,32 @@
+<page_snapshot>
+STEP: Applicant Information (1 of 2)
+FIELDS
+  f1 | Full Name | text | required
+  f2 | Email Address | text | required
+  f3 | Phone Number | text | required
+  f4 | State | select | required | options: Lagos, Kano, Rivers, Oyo
+  f5 | Local Government Area | text | required
+  f6 | Business Type | select | required | options: Sole Proprietor, Limited, Partnership
+  f7 | Middle Name (optional) | text | optional
+BUTTONS
+  b1 | Continue | allowed
+</page_snapshot>
+
+<user_data>
+AVAILABLE (reference these, never write the value yourself):
+  profile.full_name = "A…wo"
+  profile.email = "a…@example.com"
+  profile.phone = "0…00"
+  profile.address = "1…nd"
+  profile.state = "L…os"
+MISSING: profile.lga
+FROM THIS CHAT:
+  chat.lga = "Ikeja"
+</user_data>
+
+CONVERSATION SO FAR:
+USER: Can you help me fill in this registration form?
+ASSISTANT: Yes. I'll start with your name, email, and phone.
+
+The user says:
+Please fill in what you can from my profile.
