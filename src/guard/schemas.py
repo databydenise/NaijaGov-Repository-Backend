@@ -99,4 +99,12 @@ class GuardedPlan:
     grounding: GroundingVerdict = "not_required"
     repair_requested: bool = False
     reply_replaced: bool = False
+
+    # Every `chat.*` value this plan could resolve against: what the session already held, plus
+    # what the model extracted from this turn's message, `null`s skipped. Carried out of the
+    # guard because the caller has to store it and must store *exactly* this — a fill approved
+    # because `chat.lga` resolved, against a session that then saved a different `lga`, is a
+    # preview the user accepted and a context that disagrees with it on the next turn.
+    chat_values: dict[str, str] = field(default_factory=dict)
+
     report: GuardReport = field(default_factory=GuardReport)

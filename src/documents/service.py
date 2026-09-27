@@ -82,6 +82,7 @@ def _build_statement(
             Document.source_url,
             Document.agency,
             Document.service,
+            Document.ingested_at,
             distance,
         )
         .where(distance < max_distance)
@@ -108,6 +109,7 @@ def _to_chunk(row: Row[Any]) -> RetrievedChunk:
         agency=row.agency,
         service=row.service,
         distance=float(row.distance),
+        ingested_at=row.ingested_at,
     )
 
 

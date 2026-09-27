@@ -3,8 +3,9 @@ Chat/fill sessions and the log of what the extension actually did.
 
 Two rules hold this file down:
 
-- `sessions.history` is the one place transient personal data lives. It holds the last few
-  chat turns and anything the user typed in chat, and it dies with the row.
+- `sessions.history` and `sessions.chat_values` are the only places transient personal data
+  lives. Between them they hold the last few chat turns and the values the user gave in
+  chat, and both die with the row.
 - `action_log` has **no value column**, and this is the table where one would be most
   tempting. It records which field was touched and how it went, never what was written.
 """
@@ -84,6 +85,15 @@ class Session(UUIDPk, TimestampMixin, Base):
         JSONB,
         nullable=False,
         server_default=text("'[]'::jsonb"),
+    )
+
+    # Profile-shaped values the user gave in chat: `{"lga": "Ikeja"}`. The second place
+    # transient personal data lives, under the same rule as `history` — it dies with the
+    # row, and it never reaches `profiles`, because a chat message is not a consent screen.
+    chat_values: Mapped[dict[str, str]] = mapped_column(
+        JSONB,
+        nullable=False,
+        server_default=text("'{}'::jsonb"),
     )
 
     # Carried on the row rather than inferred from a cleanup job's schedule: queries

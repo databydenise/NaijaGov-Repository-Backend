@@ -175,6 +175,7 @@ def guard_plan(
         grounding=verdict,
         repair_requested=repair_requested,
         reply_replaced=reply_replaced,
+        chat_values=chat,
         report=_report(
             approved,
             rejected,
