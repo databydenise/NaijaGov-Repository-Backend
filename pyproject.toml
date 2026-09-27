@@ -23,6 +23,15 @@ dependencies = [
     # Outbound HTTP and monitoring
     "httpx>=0.28.1",
     "sentry-sdk>=2.70.0",
+    # Retrieval — the `vector` column type for SQLAlchemy, and the embedding client.
+    # `openai` is imported by src/documents/embeddings.py and nowhere else.
+    "pgvector>=0.5.0",
+    "openai>=3.19.2",
+    # Ingestion only, never imported by the API: HTML and PDF extraction for scripts/,
+    # plus the parser for the source manifest and the tuning fixtures.
+    "beautifulsoup4>=4.15.0",
+    "pypdf>=6.19.0",
+    "pyyaml>=6.0.3",
 ]
 
 [build-system]

@@ -11,6 +11,7 @@ from typing import Literal
 from pydantic import PostgresDsn, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from src.documents.constants import DEFAULT_RETRIEVAL_MAX_DISTANCE
 from src.tokens.utils import TOKEN_PREFIX
 
 ASYNCPG_SCHEME = "postgresql+asyncpg"
@@ -22,6 +23,9 @@ MIN_JWT_SECRET_BYTES = 32
 # `secrets.token_urlsafe(32)` produces 43 characters; anything under 32 is not random enough
 # to stand in for a generated token.
 MIN_DEMO_TOKEN_BODY = 32
+
+# Cosine distance is bounded at 2 (opposite vectors); nothing above it can be a cutoff.
+MAX_COSINE_DISTANCE = 2.0
 
 
 def _as_asyncpg_url(dsn: PostgresDsn) -> str:
@@ -83,6 +87,22 @@ class Settings(BaseSettings):
     # different lifetimes on purpose and the names are the spec's. ---
     session_ttl_hours: int = 24
 
+    # --- Retrieval (pgvector search over the `documents` table) ---
+    # Optional on purpose. Without a key the app still boots, every search reports
+    # `available=False`, and `/health` says retrieval is unconfigured. The prototype raised
+    # at import instead, which turns one absent key into a dead API.
+    openai_api_key: str | None = None
+
+    # Stored on every row as `embedding_model`, so a change here is detectable rather than
+    # silently comparing vectors from two different models. Changing it means re-embedding
+    # the corpus: `python -m scripts.reindex`.
+    embedding_model: str = "text-embedding-3-small"
+
+    # Cosine distance above which a match is treated as no match at all. Overridable so the
+    # value can be swept without an edit; the reasoning behind the default is in
+    # src/documents/constants.py.
+    retrieval_max_distance: float = DEFAULT_RETRIEVAL_MAX_DISTANCE
+
     # --- Demo mode ---
     demo_mode: bool = False
     demo_email: str = "demo@example.com"
@@ -109,6 +129,21 @@ class Settings(BaseSettings):
                 f"DEMO_TOKEN must start with '{TOKEN_PREFIX}' followed by at least "
                 f"{MIN_DEMO_TOKEN_BODY} random characters. Generate one with: python -c "
                 "\"import secrets; print('ngv_' + secrets.token_urlsafe(32))\""
+            )
+            raise ValueError(message)
+
+        return value
+
+    @field_validator("retrieval_max_distance")
+    @classmethod
+    def _distance_in_range(cls, value: float) -> float:
+        # Cosine distance runs 0 (identical) to 2 (opposite). A value outside that says the
+        # setting was misread as a similarity score, which would silently return everything.
+        if not 0 < value <= MAX_COSINE_DISTANCE:
+            message = (
+                f"RETRIEVAL_MAX_DISTANCE must be greater than 0 and at most "
+                f"{MAX_COSINE_DISTANCE}. It is a cosine distance, not a similarity score: "
+                "lower is stricter."
             )
             raise ValueError(message)
 

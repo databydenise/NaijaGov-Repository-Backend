@@ -1,0 +1,78 @@
+# Labelled queries for choosing the retrieval distance cutoff.
+#
+#   python -m scripts.tune_threshold
+#
+# Twenty questions, ten of each label, against the corpus in data/sources.yaml:
+#
+#   answerable    the FRSC driver's licence corpus does cover this. Returning nothing is
+#                 a miss.
+#   unanswerable  it genuinely does not. Returning anything is a false positive, and a
+#                 false positive is how the prototype produced a confident wrong fee.
+#
+# The unanswerable ones carry the weight. They are deliberately about other Nigerian
+# government services, phrased in the same register as the answerable ones, because a
+# cutoff that only rejects nonsense is not a cutoff — the dangerous query is the one that
+# sounds exactly like something the corpus covers.
+#
+# Re-label these whenever the corpus changes. A query marked answerable against a corpus
+# that no longer holds the answer turns the sweep into an argument for a looser cutoff.
+
+- query: How do I renew my driver's licence in Nigeria?
+  label: answerable
+
+- query: What documents do I need to apply for a new driver's licence?
+  label: answerable
+
+- query: How much does a driver's licence cost?
+  label: answerable
+
+- query: How long is a Nigerian driver's licence valid for?
+  label: answerable
+
+- query: Where do I go to capture my biometrics for a driver's licence?
+  label: answerable
+
+- query: What do I do if my driver's licence is lost or stolen?
+  label: answerable
+
+- query: How long does it take to get my driver's licence after applying?
+  label: answerable
+
+- query: Do I need to pass a driving test to get a licence?
+  label: answerable
+
+- query: Can I check the status of my driver's licence application online?
+  label: answerable
+
+- query: What is the minimum age to hold a driver's licence in Nigeria?
+  label: answerable
+
+- query: What is the CAC filing fee for registering a business name?
+  label: unanswerable
+
+- query: How much is the Lagos State land use charge this year?
+  label: unanswerable
+
+- query: How do I apply for a Nigerian international passport?
+  label: unanswerable
+
+- query: What is the penalty for filing company annual returns late?
+  label: unanswerable
+
+- query: How do I register for a Tax Identification Number with FIRS?
+  label: unanswerable
+
+- query: What documents are needed to open a corporate bank account?
+  label: unanswerable
+
+- query: How do I enrol for a National Identification Number?
+  label: unanswerable
+
+- query: What is the current JAMB registration fee?
+  label: unanswerable
+
+- query: How do I transfer a certificate of occupancy in Abuja?
+  label: unanswerable
+
+- query: What are the requirements for an NYSC exemption certificate?
+  label: unanswerable

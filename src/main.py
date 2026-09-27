@@ -1,6 +1,7 @@
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from typing import Any
 
 from fastapi import FastAPI, HTTPException
 from fastapi.exceptions import RequestValidationError
@@ -13,6 +14,7 @@ from src.constants import PLACEHOLDER_RULES_CACHE_KEY
 from src.context.router import router as context_router
 from src.database.session import async_session_factory, engine
 from src.demo import service as demo_service
+from src.documents.health import retrieval_health
 from src.knowledge import service as knowledge_service
 from src.exceptions.handlers import (
     general_exception_handler,
@@ -157,17 +159,23 @@ async def _count_placeholder_rules() -> int:
 
 
 @app.get("/health")
-async def health_check() -> dict[str, str | bool | int | None]:
+async def health_check() -> dict[str, Any]:
     """
     Liveness, plus what this instance is serving.
 
-    `demo_mode` is reported rather than kept quiet: an instance with a known password and a
-    long-lived token should say so out loud. `placeholder_rules` is the same idea for
-    content — nobody should have to query the database to find out that every rule being
-    served is invented. It is `null` when the database could not be reached.
+    Everything past `status` answers the question "serving what, exactly?", because the
+    ways this service can be unhelpful while perfectly alive all look identical from
+    outside. `demo_mode` means a known password and a long-lived token exist.
+    `placeholder_rules` means invented content is being served as guidance. `retrieval`
+    means questions are being answered — or not — from a corpus of a certain size, with or
+    without an embedding key.
+
+    Every one of those degrades to `null` rather than failing. An instance that is up
+    should say so even when its database is not.
     """
     return {
         "status": "Okay",
         "demo_mode": settings.demo_mode,
         "placeholder_rules": await _placeholder_rule_count(),
+        "retrieval": await retrieval_health(async_session_factory),
     }

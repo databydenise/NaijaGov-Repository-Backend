@@ -6,6 +6,7 @@ omits a table.
 """
 
 from src.database.base import Base
+from src.documents.models import Document
 from src.knowledge.models import Rule
 from src.profiles.models import Profile
 from src.sessions.models import ActionLog, Session
@@ -16,6 +17,7 @@ from src.workflows.models import Workflow, WorkflowStep
 __all__ = [
     "ActionLog",
     "Base",
+    "Document",
     "ExtensionToken",
     "Profile",
     "Rule",

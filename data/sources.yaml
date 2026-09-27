@@ -1,0 +1,33 @@
+# Sources ingested into the `documents` table by `python -m scripts.ingest`.
+#
+# Ingestion is run by hand and its output is reviewed. The API never fetches any of these.
+#
+# Every entry needs:
+#   url      the exact page or file to fetch
+#   kind     faq | page | pdf   — decides how the text is extracted
+#   agency   stored on every chunk, and a search filter. Write it the way the workflow
+#            registry writes it, or a filtered search finds nothing.
+#   service  likewise
+#   title    optional. The stem of the chunk titles; defaults to the page's own <title>
+#            for html, or the last path segment for a pdf.
+#
+# Adding a source is a change to what this service will state as fact, so it is a reviewed
+# commit, not a config tweak.
+
+- url: https://nigeriadriverslicence.frsc.gov.ng/faq
+  kind: faq
+  agency: Federal Road Safety Corps (FRSC)
+  service: Driver's Licence
+  title: FRSC Driver's Licence FAQ
+
+- url: https://nigeriadriverslicence.frsc.gov.ng/
+  kind: page
+  agency: Federal Road Safety Corps (FRSC)
+  service: Driver's Licence
+  title: FRSC Driver's Licence Portal Guide
+
+- url: https://frsc.gov.ng/wp-content/uploads/2025/04/DRC-COMPENDIUM-2025.pdf
+  kind: pdf
+  agency: Federal Road Safety Corps (FRSC)
+  service: Driver's Licence
+  title: FRSC Drivers Records Compendium 2025
