@@ -272,6 +272,26 @@ class OpenAIClient:
         return _to_reply(completion)
 
 
+_shared_client: OpenAIClient | None = None
+
+
+def shared_client() -> OpenAIClient:
+    """
+    The one client this process uses, built on first request.
+
+    A client per request would build a connection pool per request, which on the `/plan` path
+    means paying for a TLS handshake inside the user's twenty seconds. Nothing here holds
+    per-request state — `complete()` takes everything it needs as arguments — so one instance
+    is safe to share between concurrent turns.
+    """
+    global _shared_client  # noqa: PLW0603  # one lazily-built instance per process
+
+    if _shared_client is None:
+        _shared_client = OpenAIClient()
+
+    return _shared_client
+
+
 def _transport_error(exc: Exception) -> ModelTransportError:
     """Log a transient failure by type, and return the error to raise."""
     logger.warning("model call failed (%s)", type(exc).__name__)

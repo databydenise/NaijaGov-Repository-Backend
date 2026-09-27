@@ -25,6 +25,7 @@ from src.logging import configure_logging
 from src.me.router import router as me_router
 from src.middlewares.body_limit import BodyLimitMiddleware
 from src.middlewares.response import response_transformer
+from src.plan.router import router as plan_router
 from src.profiles.router import router as profile_router
 from src.tokens.router import router as tokens_router
 from src.workflows.constants import REGISTRY_CACHE_TTL_SECONDS
@@ -127,6 +128,7 @@ app.include_router(tokens_router)
 app.include_router(profile_router)
 app.include_router(me_router)
 app.include_router(context_router)
+app.include_router(plan_router)
 
 
 async def _placeholder_rule_count() -> int | None:

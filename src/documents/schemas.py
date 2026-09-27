@@ -12,6 +12,7 @@ pydantic model because it is serialised into a response; these are not.
 """
 
 from dataclasses import dataclass
+from datetime import datetime
 
 
 @dataclass(frozen=True)
@@ -31,6 +32,12 @@ class RetrievedChunk:
     # Raw cosine distance: 0 is identical, 2 is opposite. Kept rather than discarded
     # because tuning the cutoff needs the number the cutoff is compared against.
     distance: float
+
+    # When this chunk was ingested — the corpus's own "last checked" date, shown beside
+    # every citation that uses it. Optional only so a hand-built chunk in a check does not
+    # have to invent one; the search always sets it. A citation shown without it says so,
+    # rather than borrowing today's date and implying the source was read today.
+    ingested_at: datetime | None = None
 
     # `1 - distance`, for a log line or a panel that wants "closer is bigger". Derived, not
     # stored, and never the thing a threshold is applied to.
