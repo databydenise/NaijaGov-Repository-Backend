@@ -33,10 +33,11 @@ from src.ai.constants import (
 )
 from src.profiles.constants import PROFILE_FIELDS
 
-# Action types this task uses, taken from the spec. They are provisional: before P4 ships they
-# must be checked against `naijagov-extension/src/shared/actions.ts` (which also carries
-# `clickSafe`, mirrored in `sessions/constants.py`). Widening or renaming this list is a
-# two-repo change, not a one-line edit here.
+# The action types the model may return. This list now matches `ACTION_TYPES` in
+# `sessions/constants.py`, which mirrors `naijagov-extension/src/shared/actions.ts`: P3 added
+# `clickSafe` so the two agree and the guard's BLOCKED_BUTTON check has something to reject.
+# Still to be confirmed against `actions.ts` by eye before P4 ships — widening or renaming this
+# list is a two-repo change, not a one-line edit here.
 ActionType = Literal[
     "fill",
     "select",
@@ -44,13 +45,14 @@ ActionType = Literal[
     "highlight",
     "scroll",
     "explain",
+    "clickSafe",
     "pause",
 ]
 
 # Actions that must name a field. `pause` is the only one that need not — it hands control back
 # to the human and may reference no single control.
 _ACTIONS_REQUIRING_FIELD: Final = frozenset(
-    {"fill", "select", "check", "highlight", "scroll", "explain"},
+    {"fill", "select", "check", "highlight", "scroll", "explain", "clickSafe"},
 )
 # Actions that must carry a value reference — the two that write into the page.
 _ACTIONS_REQUIRING_VALUE_REF: Final = frozenset({"fill", "select"})
