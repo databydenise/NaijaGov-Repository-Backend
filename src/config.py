@@ -27,6 +27,16 @@ MIN_DEMO_TOKEN_BODY = 32
 # Cosine distance is bounded at 2 (opposite vectors); nothing above it can be a cutoff.
 MAX_COSINE_DISTANCE = 2.0
 
+# The agent's default chat model. A written literal rather than an import from
+# `src/agent/constants.py`: the agent package imports these settings, so importing it back here
+# would be a cycle at boot.
+DEFAULT_MODEL_NAME = "gpt-4.1-mini"
+
+# Tokens one user may spend on model calls in a day. Generous on purpose — it exists so a stuck
+# extension retrying in a loop cannot produce a surprise invoice during demo week, not to ration
+# a real user. Roughly fifty plan turns.
+DEFAULT_DAILY_TOKEN_QUOTA = 400_000
+
 
 def _as_asyncpg_url(dsn: PostgresDsn) -> str:
     """
@@ -102,6 +112,17 @@ class Settings(BaseSettings):
     # value can be swept without an edit; the reasoning behind the default is in
     # src/documents/constants.py.
     retrieval_max_distance: float = DEFAULT_RETRIEVAL_MAX_DISTANCE
+
+    # --- The agent's model (chat completions; see src/ai/client.py) ---
+    # Shares `OPENAI_API_KEY` with the embedding client above, and degrades the same way: with
+    # no key the app boots and every turn fails as MODEL_UNAVAILABLE with a sentence for the
+    # user, rather than the process refusing to start.
+    model_name: str = DEFAULT_MODEL_NAME
+
+    # Per-user, per-day token ceiling for model calls. In-memory and per process, so it resets
+    # on restart; that is accepted for the demo and is the first thing to move to a shared store
+    # if this is ever deployed behind more than one worker.
+    daily_token_quota: int = DEFAULT_DAILY_TOKEN_QUOTA
 
     # --- Demo mode ---
     demo_mode: bool = False

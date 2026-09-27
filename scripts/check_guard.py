@@ -339,24 +339,27 @@ CASES: tuple[dict[str, Any], ...] = (
     },
     # --- missing data ---
     {
-        "name": "every required field with no value becomes a question, and no password is asked for",
+        "name": "a required field we hold no value for becomes a question; no password, and nothing we have",
         "actions": [],
         "codes": [],
         "approved": 0,
         "check": lambda plan: _check_missing(plan),
     },
     {
-        "name": "a reported missing entry for a field we filled, or for no field, is dropped",
+        "name": "a reported missing entry for a filled field, an unknown field, or a password is dropped",
         "actions": [fill("f_email", "profile", "email")],
         "missing": [
             MissingItem(field_id="f_email", label="Email", question="What is your email?"),
             MissingItem(field_id="f_ghost", label="Ghost", question="What is your ghost?"),
+            # The one a live turn actually produced: the model put the password field in its own
+            # list, and the sensitivity filter only covered entries the guard generated itself.
+            MissingItem(field_id="f_pw", label="Password", question="Enter your password."),
         ],
         "codes": [],
         "approved": 1,
         "check": lambda plan: (
             []
-            if not any(item.field_id in ("f_email", "f_ghost") for item in plan.missing)
+            if not any(item.field_id in ("f_email", "f_ghost", "f_pw") for item in plan.missing)
             else ["a missing entry that should have been dropped survived"]
         ),
     },
@@ -444,17 +447,32 @@ def _expect_verdict(plan: GuardedPlan, verdict: str, *, repair: bool) -> list[st
 
 
 def _check_missing(plan: GuardedPlan) -> list[str]:
-    """Every required field becomes a question — except the one we must never ask about."""
+    """
+    A required field we hold no value for becomes a question — and the password never does.
+
+    Note what is *not* asked for: Full Name, Email, Phone and State are in `PROFILE`, and LGA is in
+    `CHAT`, so none of them is a gap in our data however the turn went. Before P4 ran a live turn
+    this function expected all seven, and the panel was duly handed "What is your Email Address?"
+    next to a profile that had one. What is left is the two fields nothing could supply: the
+    Business Type select and the Declaration checkbox.
+    """
     failures = []
     asked = {item.field_id: item for item in plan.missing}
+    held_labels = {"f_name", "f_email", "f_phone", "f_state", "f_lga"}
     required = {
         page_field.field_id
         for page_field in FIELDS
-        if page_field.required and not page_field.sensitive
+        if page_field.required
+        and not page_field.sensitive
+        and page_field.field_id not in held_labels
     }
 
     if set(asked) != required:
         failures.append(f"missing covers {sorted(asked)}, expected {sorted(required)}")
+    if asked.keys() & held_labels:
+        failures.append(
+            f"asked for values we hold: {sorted(asked.keys() & held_labels)}",
+        )
     if "f_pw" in asked:
         failures.append("the guard asked the user for a password")
     if asked.get("f_decl") and asked["f_decl"].question != "Can you confirm: Declaration?":

@@ -49,6 +49,18 @@ CHARS_PER_TOKEN: Final = 4
 # overflow the renderer drops history, then non-required fields, and logs every drop.
 TOKEN_BUDGET: Final = 6000
 
+# --- The model call (see client.py) ---
+# Low, not zero. Zero is not deterministic for a chat model anyway, and a little slack reads
+# better in the reply while the parts that must not vary — ids, keys, the schema — are fixed by
+# validation rather than by temperature.
+MODEL_TEMPERATURE: Final = 0.1
+
+# A ceiling on one completion, so a model that loses its way costs one truncated answer rather
+# than a long one. A full plan — a 600-character reply, thirty actions, five citations — is well
+# under this; a completion that hits it comes back with `finish_reason="length"`, fails to parse,
+# and takes the repair pass.
+MAX_COMPLETION_TOKENS: Final = 2000
+
 # --- Snapshot fencing ---
 # Page content is fenced in these delimiters and declared untrusted in the system prompt. Any
 # occurrence of a delimiter inside page text is escaped before rendering, so a hostile page
