@@ -21,10 +21,10 @@ from src.documents.schemas import RetrievedChunk
 from src.guard.checks import check_action, reject
 from src.guard.constants import (
     BLOCKED_BUTTON_PAUSE_REASON,
-    GroundingVerdict,
     MAX_APPROVED_ACTIONS,
     READ_ONLY_ACTIONS,
     UNVERIFIED_REPLY,
+    GroundingVerdict,
 )
 from src.guard.grounding import grounding_verdict, verify_citations
 from src.guard.missing import merge_missing
@@ -141,7 +141,13 @@ def guard_plan(
         keys.add(key)
         approved.append(outcome)
 
-    missing, added = merge_missing(response.missing, fields, approved, blocked)
+    # The keys that could supply a value, so `merge_missing` does not ask for what we have.
+    held = {
+        key
+        for key in (*profile.keys(), *chat.keys())
+        if (profile.get(key) or chat.get(key))
+    }
+    missing, added = merge_missing(response.missing, fields, approved, blocked, held)
 
     citations, dropped = verify_citations(response.citations, chunks)
     verdict = grounding_verdict(response.reply, citations)

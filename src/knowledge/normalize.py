@@ -78,3 +78,28 @@ def normalize_label(raw: str) -> str:
     cleaned = _clean(raw)
 
     return _aliases().get(cleaned, cleaned)
+
+
+# A page label, normalised, to the profile key that would supply it. Six entries, exact-match,
+# and it rides on the alias map above: "LGA", "E-mail Address:" and "Mobile Number" have already
+# collapsed to one form by the time they are looked up here.
+#
+# What this is for and what it is not: it answers "do we plausibly hold a value for this field?",
+# which is what decides whether the panel *asks* the user for it. It must never be used to decide
+# what to *fill* — that stays the model's `value_ref`, checked by the guard, because a label-based
+# guess writing into a government form is the failure the whole reference design prevents. A label
+# that is not here is treated as one we hold nothing for, so the question still gets asked: asking
+# for something we have is mild, and filling the wrong field is not.
+PROFILE_KEY_BY_LABEL: dict[str, str] = {
+    "full name": "full_name",
+    "email address": "email",
+    "phone number": "phone",
+    "address": "address",
+    "state": "state",
+    "local government area": "lga",
+}
+
+
+def profile_key_for_label(raw: str) -> str | None:
+    """The profile key a page label corresponds to, or None if it is not one we store."""
+    return PROFILE_KEY_BY_LABEL.get(normalize_label(raw))

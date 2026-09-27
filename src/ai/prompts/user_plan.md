@@ -1,4 +1,4 @@
-<!-- v2 -->
+<!-- v3 -->
 {page_block}
 
 {user_data_block}

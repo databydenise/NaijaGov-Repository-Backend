@@ -172,6 +172,26 @@ class PlanResponse(StrictModel):
     missing: list[MissingItem] = Field(default_factory=list, max_length=MAX_MISSING)
 
 
+class ExplainResponse(StrictModel):
+    """
+    The whole of what `/explain` may return: a sentence or two about one field, and its sources.
+
+    Deliberately minimal. `/explain` describes a field — it never writes to the page, so there is
+    no action list and no `value_ref`, and the smaller schema is most of why the explain turn is
+    cheaper than a plan turn. P6 owns whatever it needs beyond this; adding a field here is a
+    change the panel has to render.
+
+    The reply shares `MAX_REPLY_CHARS` with `PlanResponse` rather than getting a knob of its own:
+    the panel that shows it is the same width, and the explain prompt already asks for two or
+    three short sentences. Grounding is checked the same way as a plan's, against the same
+    `Citation` — a fee or a format requirement with no retrieved chunk behind it is unverified
+    whichever endpoint said it.
+    """
+
+    reply: str = Field(max_length=MAX_REPLY_CHARS)
+    citations: list[Citation] = Field(default_factory=list, max_length=MAX_CITATIONS)
+
+
 # Keywords the provider's strict mode does not support. Kept on the Pydantic model (where they
 # are enforced) and stripped from the schema the provider sees, so a strict call is never
 # rejected for carrying one.
@@ -229,3 +249,8 @@ def build_strict_schema(model: type[BaseModel]) -> dict[str, Any]:
 # Handed to the provider as the `json_schema` (with `strict: true`) by P4. Generated here so it
 # can never disagree with `PlanResponse`.
 PLAN_RESPONSE_SCHEMA: Final[dict[str, Any]] = build_strict_schema(PlanResponse)
+
+
+# Handed to the provider on an `/explain` call. Generated the same way, from the same base, so
+# the two response contracts cannot drift apart in how strictly they are enforced.
+EXPLAIN_RESPONSE_SCHEMA: Final[dict[str, Any]] = build_strict_schema(ExplainResponse)
