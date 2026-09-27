@@ -28,6 +28,8 @@ from src.middlewares.body_limit import BodyLimitMiddleware
 from src.middlewares.response import response_transformer
 from src.plan.router import router as plan_router
 from src.profiles.router import router as profile_router
+from src.results.health import results_health
+from src.results.router import router as results_router
 from src.tokens.router import router as tokens_router
 from src.workflows.constants import REGISTRY_CACHE_TTL_SECONDS
 
@@ -131,6 +133,7 @@ app.include_router(me_router)
 app.include_router(context_router)
 app.include_router(plan_router)
 app.include_router(explain_router)
+app.include_router(results_router)
 
 
 async def _placeholder_rule_count() -> int | None:
@@ -174,6 +177,10 @@ async def health_check() -> dict[str, Any]:
     means questions are being answered — or not — from a corpus of a certain size, with or
     without an embedding key.
 
+    `results` is the run counters the spec asks to be visible somewhere — fills that stuck,
+    fills that did not, checkpoints that fired — aggregate and content-free, and here rather
+    than behind an admin route because this project has no staff auth to put one behind.
+
     Every one of those degrades to `null` rather than failing. An instance that is up
     should say so even when its database is not.
     """
@@ -182,4 +189,5 @@ async def health_check() -> dict[str, Any]:
         "demo_mode": settings.demo_mode,
         "placeholder_rules": await _placeholder_rule_count(),
         "retrieval": await retrieval_health(async_session_factory),
+        "results": await results_health(async_session_factory),
     }

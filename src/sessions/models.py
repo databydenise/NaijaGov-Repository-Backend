@@ -96,6 +96,28 @@ class Session(UUIDPk, TimestampMixin, Base):
         server_default=text("'{}'::jsonb"),
     )
 
+    # What this session's runs have added up to so far, one column per action-log status.
+    # Incremented by `/results` as each run is reported.
+    #
+    # These are the session's own tally and they die with it, which is the whole distinction
+    # from the durable counters in `results_counters`: this answers "how is this application
+    # going" for as long as the application is live, and that table answers "how does this step
+    # behave" long after every session that touched it has expired. Counted here rather than
+    # summed from `action_log` on demand because the row is already being written.
+    results_ok: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
+    results_changed: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
+    results_failed: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
+    results_rejected: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        server_default=text("0"),
+    )
+    results_cancelled: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        server_default=text("0"),
+    )
+
     # Carried on the row rather than inferred from a cleanup job's schedule: queries
     # filter on it regardless, so a missed sweep is a storage cost, never a wrong answer.
     expires_at: Mapped[datetime] = mapped_column(
