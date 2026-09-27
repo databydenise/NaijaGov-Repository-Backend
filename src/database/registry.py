@@ -10,6 +10,7 @@ from src.documents.models import Document
 from src.explain.models import ExplanationCache
 from src.knowledge.models import Rule
 from src.profiles.models import Profile
+from src.results.models import CheckpointEvent, PlanReport, ResultsCounter
 from src.sessions.models import ActionLog, Session
 from src.tokens.models import ExtensionToken
 from src.users.models import User
@@ -18,10 +19,13 @@ from src.workflows.models import Workflow, WorkflowStep
 __all__ = [
     "ActionLog",
     "Base",
+    "CheckpointEvent",
     "Document",
     "ExplanationCache",
     "ExtensionToken",
+    "PlanReport",
     "Profile",
+    "ResultsCounter",
     "Rule",
     "Session",
     "User",
