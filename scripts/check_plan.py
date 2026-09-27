@@ -54,7 +54,6 @@ from src.main import app
 from src.plan import service as plan_service
 from src.plan import store
 from src.plan.constants import (
-    FAILURE_STATUS,
     IDEMPOTENCY_WINDOW_SECONDS,
     PLAN_TTL_SECONDS,
     RATE_LIMIT,
@@ -64,6 +63,7 @@ from src.rate_limit import reset_rate_limits
 from src.sessions.constants import MAX_HISTORY_TURNS
 from src.sessions.models import Session
 from src.tokens.dependencies import require_token
+from src.turn_errors import FAILURE_STATUS
 from src.workflows import service as workflows_service
 from src.workflows.schemas import Step
 

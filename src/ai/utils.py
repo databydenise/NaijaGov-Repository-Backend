@@ -12,6 +12,10 @@ from typing import Final
 from src.ai.constants import (
     CHARS_PER_TOKEN,
     MASK_MIN_LENGTH,
+    OFFICIAL_SOURCES_CLOSE,
+    OFFICIAL_SOURCES_CLOSE_ESCAPED,
+    OFFICIAL_SOURCES_OPEN,
+    OFFICIAL_SOURCES_OPEN_ESCAPED,
     SNAPSHOT_CLOSE,
     SNAPSHOT_CLOSE_ESCAPED,
     SNAPSHOT_OPEN,
@@ -33,6 +37,10 @@ _DELIMITER_SWAPS: Final[tuple[tuple[str, str], ...]] = (
     (SNAPSHOT_CLOSE, SNAPSHOT_CLOSE_ESCAPED),
     (USER_DATA_OPEN, "‹user_data›"),
     (USER_DATA_CLOSE, "‹/user_data›"),
+    # `/explain` fences retrieved corpus text as well. A chunk comes from a government site
+    # rather than from a hostile page, but it is still text nobody on this side wrote.
+    (OFFICIAL_SOURCES_OPEN, OFFICIAL_SOURCES_OPEN_ESCAPED),
+    (OFFICIAL_SOURCES_CLOSE, OFFICIAL_SOURCES_CLOSE_ESCAPED),
 )
 
 

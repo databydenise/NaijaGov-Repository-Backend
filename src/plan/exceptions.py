@@ -5,17 +5,19 @@ Every one of these carries a sentence written for a citizen, because the side pa
 `message` verbatim. None carries a stack trace, a model response, a field label, or anything the
 user typed.
 
-The runner's failures are translated rather than re-worded: `agent/constants.py` already holds
-the sentence for each of its codes, and writing a second set here would mean two places to change
-and one of them forgotten.
+Only the two failures this endpoint owns are here. A failed *turn* is not one of them: every
+endpoint that runs a turn fails the same six ways, so `turn_failed` lives in `src/turn_errors.py`
+and is re-exported here, because `/plan`'s own routes should not have to know that.
 """
 
 from fastapi import status
 
-from src.agent.schemas import TurnFailure
 from src.constants import ErrorCode
 from src.exceptions.errors import api_error
-from src.plan.constants import FAILURE_CODES, FAILURE_STATUS, PLAN_ERROR_MESSAGES
+from src.plan.constants import PLAN_ERROR_MESSAGES
+from src.turn_errors import turn_failed
+
+__all__ = ["page_changed", "session_not_found", "turn_failed"]
 
 
 def session_not_found() -> Exception:
@@ -43,19 +45,4 @@ def page_changed() -> Exception:
         status.HTTP_409_CONFLICT,
         ErrorCode.PAGE_CHANGED,
         PLAN_ERROR_MESSAGES[ErrorCode.PAGE_CHANGED],
-    )
-
-
-def turn_failed(failure: TurnFailure) -> Exception:
-    """
-    The runner's failure, as this endpoint's HTTP answer.
-
-    An unmapped code — one added to the runner without a status here — is answered as a 503 with
-    the runner's own sentence, rather than raising a `KeyError` that becomes a 500 with no
-    sentence at all. The user is told something true either way; the log line carries the code.
-    """
-    return api_error(
-        FAILURE_STATUS.get(failure.code, status.HTTP_503_SERVICE_UNAVAILABLE),
-        FAILURE_CODES.get(failure.code, failure.code),
-        failure.message,
     )

@@ -15,14 +15,19 @@ corpus answer.
 
 import logging
 import time
+from datetime import datetime
 from typing import Any
 
-from sqlalchemy import Row, Select, select, text
+from sqlalchemy import Row, Select, func, select, text
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.cache import cached
 from src.config import settings
 from src.database.session import async_session_factory
 from src.documents.constants import (
     DEFAULT_SEARCH_LIMIT,
+    LATEST_INGEST_CACHE_PREFIX,
+    LATEST_INGEST_CACHE_TTL_SECONDS,
     MAX_SEARCH_LIMIT,
     MIN_SEARCH_LIMIT,
     SEARCH_STATEMENT_TIMEOUT_MS,
@@ -227,3 +232,42 @@ def _log_search(
         cache_hit,
         duration_ms,
     )
+
+
+async def _load_latest_ingested_at(db: AsyncSession, agency: str | None) -> datetime | None:
+    """`MAX(ingested_at)` over the corpus, or over one agency's part of it."""
+    statement = select(func.max(Document.ingested_at))
+
+    if agency:
+        statement = statement.where(Document.agency == agency)
+
+    result = await db.execute(statement)
+
+    return result.scalar_one_or_none()
+
+
+async def latest_ingested_at(db: AsyncSession, agency: str | None = None) -> datetime | None:
+    """
+    When this agency's material was last ingested, or None if it has none.
+
+    The corpus's vintage, which is what makes cache invalidation by construction possible: a caller
+    that puts this timestamp in a cache key gets fresh keys the moment new material is ingested,
+    and the rows written against the old vintage are simply never looked up again. No purge, no
+    delete path, and nothing to remember to run after an ingest.
+
+    Never raises. A database that does not answer comes back as None, and a caller must treat that
+    as "vintage unknown" rather than as "nothing ingested" — the two would otherwise share a cache
+    key, so an answer written during an outage could be served afterwards.
+    """
+    try:
+        return await cached(
+            f"{LATEST_INGEST_CACHE_PREFIX}{agency or '*'}",
+            LATEST_INGEST_CACHE_TTL_SECONDS,
+            lambda: _load_latest_ingested_at(db, agency),
+        )
+    except Exception as exc:  # noqa: BLE001  # a request path must survive any db failure
+        # Type only. The message can carry SQL, and a connection string with it.
+        logger.warning("Could not read the corpus vintage (%s)", type(exc).__name__)
+
+        return None
+

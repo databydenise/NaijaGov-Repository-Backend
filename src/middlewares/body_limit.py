@@ -17,6 +17,7 @@ from typing import Any
 
 from src.constants import ErrorCode
 from src.context.constants import MAX_BODY_BYTES
+from src.explain.constants import MAX_BODY_BYTES as MAX_EXPLAIN_BODY_BYTES
 
 logger = logging.getLogger(__name__)
 
@@ -24,10 +25,15 @@ Scope = MutableMapping[str, Any]
 Receive = Callable[[], Awaitable[MutableMapping[str, Any]]]
 Send = Callable[[MutableMapping[str, Any]], Awaitable[None]]
 
-# Path prefix to its limit. Only the routes that take a page snapshot need one; the rest
-# take a handful of fields and are capped by their own models. `/plan` shares `/context`'s
-# limit because it carries the same snapshot, plus a message capped at 2000 characters.
-BODY_LIMITS: dict[str, int] = {"/context": MAX_BODY_BYTES, "/plan": MAX_BODY_BYTES}
+# Path prefix to its limit. Only the routes that take page content need one; the rest take a
+# handful of fields and are capped by their own models. `/plan` shares `/context`'s limit
+# because it carries the same snapshot, plus a message capped at 2000 characters. `/explain`
+# takes one field and gets a quarter of it, because that is all one field can be.
+BODY_LIMITS: dict[str, int] = {
+    "/context": MAX_BODY_BYTES,
+    "/plan": MAX_BODY_BYTES,
+    "/explain": MAX_EXPLAIN_BODY_BYTES,
+}
 
 # 413. The body is already in the wrapped shape the response middleware would produce,
 # because this response is sent directly and never passes through it.

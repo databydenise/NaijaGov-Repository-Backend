@@ -60,6 +60,15 @@ QUERY_EMBEDDING_CACHE_PREFIX: Final = "documents:query_embedding:"
 # rather than grows.
 QUERY_EMBEDDING_CACHE_MAX_ENTRIES: Final = 512
 
+# --- Corpus vintage -----------------------------------------------------------------
+
+# How long "when was this agency's material last ingested" is held. Reference data: it
+# changes only when someone runs the ingest script by hand. `/explain` puts this timestamp
+# in its cache key, so a stale copy costs at most one TTL of hits against the previous
+# vintage — and a re-ingest makes every older key unreachable rather than needing a purge.
+LATEST_INGEST_CACHE_TTL_SECONDS: Final = 300
+LATEST_INGEST_CACHE_PREFIX: Final = "documents:latest_ingest:"
+
 # --- Corpus statistics for /health --------------------------------------------------
 
 CORPUS_STATS_CACHE_KEY: Final = "documents:corpus_stats"

@@ -7,6 +7,7 @@ omits a table.
 
 from src.database.base import Base
 from src.documents.models import Document
+from src.explain.models import ExplanationCache
 from src.knowledge.models import Rule
 from src.profiles.models import Profile
 from src.sessions.models import ActionLog, Session
@@ -18,6 +19,7 @@ __all__ = [
     "ActionLog",
     "Base",
     "Document",
+    "ExplanationCache",
     "ExtensionToken",
     "Profile",
     "Rule",

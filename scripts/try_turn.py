@@ -37,11 +37,12 @@ from src.agent.explain import run_explain_turn
 from src.agent.plan import run_plan_turn
 from src.agent.schemas import ExplainTurn, PlanTurn, TurnFailure, TurnTelemetry
 from src.ai import client as model_client
-from src.ai.context import StepView, render_page_block, render_plan_context
+from src.ai.context import StepView, render_explain_context, render_plan_context
 from src.ai.prompt_loader import PROMPT_VERSION
 from src.config import settings
 from src.context.schemas import PageButton, PageField
 from src.documents.service import search_government_information
+from src.explain import utils as explain_utils
 from src.logging import RedactingFilter, configure_logging
 
 # --- The snapshot, as the extension would send it ---------------------------------------------
@@ -179,8 +180,10 @@ def print_plan(outcome: PlanTurn) -> None:
 
 
 def print_explain(outcome: ExplainTurn) -> None:
-    print(f"  reply       : {outcome.response.reply}")
+    print(f"  explanation : {outcome.response.explanation}")
+    print(f"  example     : {outcome.response.example or '(none)'}")
     print(f"  grounding   : {outcome.grounding}")
+    print(f"  chunks      : {len(outcome.chunks)}")
     for citation in outcome.response.citations:
         print(f"      chunk {citation.chunk_id}  {citation.source_url}")
 
@@ -246,22 +249,40 @@ async def one_explain_turn(
     client: model_client.ModelClient,
 ) -> ExplainTurn | TurnFailure:
     """
-    One explain turn.
+    One explain turn, the way `/explain` makes it: retrieve first, then render, then call.
 
-    P6 owns the real explain renderer; until it exists the context is the page block plus the
-    question, which is enough to exercise the entry point end to end.
+    The retrieval happens here rather than being left to the model's own tool call, because that is
+    the endpoint's actual shape — a corpus that covers nothing answers without a model call at all.
+    This script always calls the model, so it prints what was retrieved instead and lets you see
+    the case `/explain` would have short-circuited.
     """
-    context = (
-        f"{render_page_block(STEP, FIELDS, BUTTONS)}\n\n"
-        f"Explain the field labelled \"{label}\" to the user."
+    page_field = next(
+        (item for item in FIELDS if item.label.casefold() == label.casefold()),
+        FIELDS[0],
+    )
+    result = await search_government_information(
+        explain_utils.build_query(page_field),
+        limit=3,
+    )
+
+    if not result.available:
+        print("  NOTE        : retrieval did not run; /explain would not have called the model")
+    elif result.is_empty:
+        print("  NOTE        : the corpus covers nothing here; /explain would have said so")
+
+    context = render_explain_context(
+        step=STEP,
+        page_field=page_field,
+        chunks=result.chunks,
     )
 
     return await run_explain_turn(
-        context=context,
+        context=context.text,
         retrieve=search_government_information,
         client=client,
         session_id="try-turn-explain",
         user_id="try-turn",
+        chunks=tuple(result.chunks),
     )
 
 

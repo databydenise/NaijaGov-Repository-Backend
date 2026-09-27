@@ -1,16 +1,15 @@
 """
 `/plan` limits, budgets, and the fixed strings a citizen reads.
 
-Three catalogues here are contracts rather than tuning knobs:
+Two catalogues here are contracts rather than tuning knobs:
 
-- `FAILURE_STATUS` maps every code the runner can fail with onto this endpoint's HTTP status.
-  The runner deliberately does not know about HTTP (`agent/constants.py` says so), and the
-  sentence the panel prints comes from the runner's own `FAILURE_MESSAGES` — so this table is
-  statuses only, and adding a failure code to the runner without adding it here is a 500.
 - `PLAN_ERROR_MESSAGES` holds the sentences for the failures this endpoint owns rather than the
   runner: a session that is gone, and a page that changed under us.
 - `SOURCE_LABELS` is how provenance is worded in the fill preview. The panel prints it beside
   every row, so it is written for a person: where the value came from, in five words.
+
+How a *runner* failure becomes a status is not here: `/explain` fails the same six ways and must
+answer them the same way, so that table lives in `src/turn_errors.py` and both endpoints read it.
 
 The caps are shared with `/context` rather than restated. Both endpoints take the same snapshot
 from the same content script, and two sets of limits on one payload shape is how they drift.
@@ -93,33 +92,6 @@ PLAN_ERROR_MESSAGES: Final[dict[str, str]] = {
         "I've lost track of this page. Refresh it and I'll read it again."
     ),
     ErrorCode.PAGE_CHANGED: "The page changed while I was working. Let me read it again.",
-}
-
-# Every runner failure code, and the status this endpoint answers it with. The sentence comes
-# from `FAILURE_MESSAGES` in `agent/constants.py`, which is where it belongs: the runner knows
-# what went wrong, and only this layer knows it is speaking HTTP.
-#
-# Two codes are mapped to a status that does not repeat their own name, and both are deliberate:
-#
-# - `BUDGET_EXCEEDED` → 504. From outside, a turn that ran out of time and a provider that never
-#   answered are the same event: we waited, and there is no plan. The codes stay distinct in the
-#   log line, where the difference is actionable.
-# - `SCHEMA_FAILED` → 502 `PLAN_FAILED`. The provider answered; what it said could not be made
-#   into a plan even after a repair. That is an upstream fault, not a timeout and not the
-#   caller's request being wrong.
-FAILURE_STATUS: Final[dict[str, int]] = {
-    "MODEL_UNAVAILABLE": 503,
-    "MODEL_TIMEOUT": 504,
-    "BUDGET_EXCEEDED": 504,
-    "SCHEMA_FAILED": 502,
-    "SESSION_BUSY": 409,
-    "QUOTA_EXCEEDED": 429,
-}
-
-# The code returned for each runner failure, where it differs from the runner's own name.
-FAILURE_CODES: Final[dict[str, str]] = {
-    "BUDGET_EXCEEDED": ErrorCode.MODEL_TIMEOUT,
-    "SCHEMA_FAILED": ErrorCode.PLAN_FAILED,
 }
 
 # A step line for a page the registry does not know. `/context` answers such a page with
