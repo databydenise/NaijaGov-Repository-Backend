@@ -1,4 +1,5 @@
-"""Chat/fill sessions and the log of what the extension actually did.
+"""
+Chat/fill sessions and the log of what the extension actually did.
 
 Two rules hold this file down:
 

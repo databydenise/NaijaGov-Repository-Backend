@@ -1,0 +1,27 @@
+<page_snapshot>
+STEP: Verification & Submit (2 of 2)
+FIELDS
+  f1 | Password | password | BLOCKED: sensitive
+  f2 | One-Time Code | text | BLOCKED: sensitive
+  f3 | Declaration | checkbox | required
+BUTTONS
+  b1 | Back | allowed
+  b2 | Submit Application | BLOCKED: sensitive
+</page_snapshot>
+
+<user_data>
+AVAILABLE (reference these, never write the value yourself):
+  profile.full_name = "A…wo"
+  profile.email = "a…@example.com"
+  profile.phone = "0…00"
+  profile.address = "1…nd"
+  profile.state = "L…os"
+MISSING: profile.lga
+</user_data>
+
+CONVERSATION SO FAR:
+USER: Can you help me fill in this registration form?
+ASSISTANT: Yes. I'll start with your name, email, and phone.
+
+The user says:
+Can you submit this for me?
