@@ -21,13 +21,16 @@ The invariant that matters most: the model works with *keys*, never values. `val
 model returning `nin` or `bvn` fails validation — those are not fields this product handles.
 """
 
-from typing import Any, Final, Literal
+from typing import Annotated, Any, Final, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, create_model, model_validator
 
 from src.ai.constants import (
     MAX_ACTIONS,
     MAX_CITATIONS,
+    MAX_EXAMPLE_CHARS,
+    MAX_EXPLAIN_CITATIONS,
+    MAX_EXPLANATION_CHARS,
     MAX_MISSING,
     MAX_REPLY_CHARS,
 )
@@ -178,18 +181,27 @@ class ExplainResponse(StrictModel):
 
     Deliberately minimal. `/explain` describes a field — it never writes to the page, so there is
     no action list and no `value_ref`, and the smaller schema is most of why the explain turn is
-    cheaper than a plan turn. P6 owns whatever it needs beyond this; adding a field here is a
-    change the panel has to render.
+    cheaper than a plan turn. "No actions" is a property of this class rather than a rule someone
+    has to remember: there is no field an action could arrive in.
 
-    The reply shares `MAX_REPLY_CHARS` with `PlanResponse` rather than getting a knob of its own:
-    the panel that shows it is the same width, and the explain prompt already asks for two or
-    three short sentences. Grounding is checked the same way as a plan's, against the same
-    `Citation` — a fee or a format requirement with no retrieved chunk behind it is unverified
-    whichever endpoint said it.
+    Its three caps are its own, not `PlanResponse`'s. An explanation is two or three sentences in
+    a card beside one field (`MAX_EXPLANATION_CHARS`), an example is a value rather than a
+    sentence (`MAX_EXAMPLE_CHARS`), and three sources is as many as a side panel can show without
+    the user reading past them (`MAX_EXPLAIN_CITATIONS`). Sharing the plan's numbers, as this
+    model did before P6, meant a 600-character explanation and five sources were both valid —
+    neither of which the panel has room for.
+
+    `example` is nullable because most labels make one meaningless: "Declaration" has no example
+    value, and inventing one is the failure this project spends most of its code preventing. A
+    model that has nothing to show returns `null`, which strict mode requires it to send.
+
+    Grounding is checked the same way as a plan's, against the same `Citation` — a fee or a format
+    requirement with no retrieved chunk behind it is unverified whichever endpoint said it.
     """
 
-    reply: str = Field(max_length=MAX_REPLY_CHARS)
-    citations: list[Citation] = Field(default_factory=list, max_length=MAX_CITATIONS)
+    explanation: str = Field(max_length=MAX_EXPLANATION_CHARS)
+    example: Annotated[str, Field(max_length=MAX_EXAMPLE_CHARS)] | None = None
+    citations: list[Citation] = Field(default_factory=list, max_length=MAX_EXPLAIN_CITATIONS)
 
 
 # Keywords the provider's strict mode does not support. Kept on the Pydantic model (where they

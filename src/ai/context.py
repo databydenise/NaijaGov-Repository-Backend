@@ -23,20 +23,28 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from src.ai.constants import (
+    DEFAULT_EXPLAIN_QUESTION,
     MAX_HISTORY_TURN_CHARS,
     MAX_HISTORY_TURNS_RENDERED,
     MAX_PAGE_FIELDS,
+    MAX_RENDERED_CHUNK_CHARS,
+    MAX_RENDERED_CHUNKS,
     MAX_RENDERED_LABEL_CHARS,
+    MAX_RENDERED_NEARBY_CHARS,
     MAX_RENDERED_OPTIONS,
+    MAX_RENDERED_QUESTION_CHARS,
+    OFFICIAL_SOURCES_CLOSE,
+    OFFICIAL_SOURCES_OPEN,
     SNAPSHOT_CLOSE,
     SNAPSHOT_OPEN,
     TOKEN_BUDGET,
     USER_DATA_CLOSE,
     USER_DATA_OPEN,
 )
-from src.ai.prompt_loader import USER_PLAN
+from src.ai.prompt_loader import USER_EXPLAIN, USER_PLAN
 from src.ai.utils import clean, estimate_tokens, mask_value
 from src.context.schemas import PageButton, PageField
+from src.documents.schemas import RetrievedChunk
 from src.profiles.constants import PROFILE_FIELDS
 
 logger = logging.getLogger(__name__)
@@ -58,6 +66,21 @@ class PlanContext:
     text: str
     estimated_tokens: int
     truncated: list[str] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class ExplainContext:
+    """
+    The assembled `/explain` context and its estimated size.
+
+    No `truncated` list, because there is nothing to drop: one field, at most three capped chunks,
+    a capped question and no history is a small prompt by construction. If that ever stops being
+    true the answer is a smaller chunk cap, not an overflow stage that silently removes the
+    evidence the answer has to be grounded in.
+    """
+
+    text: str
+    estimated_tokens: int
 
 
 def _order_fields(fields: Sequence[PageField]) -> list[PageField]:
@@ -241,3 +264,100 @@ def render_plan_context(
             text = assemble(page_block, history_block)
 
     return PlanContext(text=text, estimated_tokens=estimate_tokens(text), truncated=truncated)
+
+
+def render_explain_field_block(
+    step: StepView | None,
+    page_field: PageField,
+    nearby_text: str = "",
+) -> str:
+    """
+    The `<page_snapshot>` block for one field: the step line, that field, and the text beside it.
+
+    One field rather than the page, which is the whole difference between this and
+    `render_page_block`: `/explain` answers about a single control, and showing the model forty
+    others invites it to explain the form instead. `nearby_text` is the portal's own instruction
+    next to the field — the most useful sentence on the page and the least trustworthy, so it is
+    cleaned and capped like every other piece of page text.
+    """
+    lines = [SNAPSHOT_OPEN]
+
+    if step is not None:
+        lines.append(f"STEP: {clean(step.name)} ({step.index} of {step.total})")
+
+    lines.append("FIELD")
+    lines.append(_render_field_line(page_field))
+
+    if nearby_text:
+        lines.append(f"NEARBY TEXT: {clean(nearby_text, MAX_RENDERED_NEARBY_CHARS)}")
+
+    lines.append(SNAPSHOT_CLOSE)
+
+    return "\n".join(lines)
+
+
+def render_sources_block(chunks: Sequence[RetrievedChunk]) -> str:
+    """
+    The `<official_sources>` block: the chunks retrieved for this field, with their provenance.
+
+    `chunk_id` is on every entry because it is what a citation names, and the guard drops a
+    citation whose id was not retrieved — so a chunk rendered without its id is a chunk the model
+    cannot legitimately cite. `checked` is the corpus's own ingest date, not today's.
+
+    An empty list renders a block that says so. `/explain` short-circuits before the model call
+    when nothing was retrieved, so this is a fallback rather than the path — and a block reading
+    "no official sources" is a better fallback than no block at all, which reads as a prompt bug.
+    """
+    if not chunks:
+        return "\n".join(
+            [
+                OFFICIAL_SOURCES_OPEN,
+                "(no official source covers this field)",
+                OFFICIAL_SOURCES_CLOSE,
+            ],
+        )
+
+    lines = [OFFICIAL_SOURCES_OPEN]
+
+    for chunk in chunks[:MAX_RENDERED_CHUNKS]:
+        checked = chunk.ingested_at.date().isoformat() if chunk.ingested_at else "unknown"
+        lines.append(
+            f"[chunk_id {chunk.chunk_id}] {clean(chunk.title, MAX_RENDERED_LABEL_CHARS)} "
+            f"| {clean(chunk.source_url, MAX_RENDERED_LABEL_CHARS)} | checked {checked}",
+        )
+        lines.append(f"  {clean(chunk.content, MAX_RENDERED_CHUNK_CHARS)}")
+
+    lines.append(OFFICIAL_SOURCES_CLOSE)
+
+    return "\n".join(lines)
+
+
+def render_explain_context(
+    *,
+    step: StepView | None,
+    page_field: PageField,
+    chunks: Sequence[RetrievedChunk],
+    nearby_text: str = "",
+    question: str = "",
+) -> ExplainContext:
+    """
+    Assemble the `/explain` user message: one field, the sources retrieved for it, and the question.
+
+    What is deliberately absent is the `<user_data>` block. `/plan` renders masked profile keys
+    because it has to write values into the page; `/explain` writes nothing, so the model is given
+    none of the user's data at all — not a key, not a mask. That is a stronger guarantee than the
+    prompt's "do not read back stored values", because there is nothing there to read back.
+    """
+    return _sized(
+        USER_EXPLAIN.format(
+            page_block=render_explain_field_block(step, page_field, nearby_text),
+            sources_block=render_sources_block(chunks),
+            question=clean(question, MAX_RENDERED_QUESTION_CHARS) or DEFAULT_EXPLAIN_QUESTION,
+        ),
+    )
+
+
+def _sized(text: str) -> ExplainContext:
+    """The rendered text with its token estimate, so callers cannot forget to measure it."""
+    return ExplainContext(text=text, estimated_tokens=estimate_tokens(text))
+

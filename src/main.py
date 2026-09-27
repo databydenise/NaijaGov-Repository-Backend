@@ -15,6 +15,7 @@ from src.context.router import router as context_router
 from src.database.session import async_session_factory, engine
 from src.demo import service as demo_service
 from src.documents.health import retrieval_health
+from src.explain.router import router as explain_router
 from src.knowledge import service as knowledge_service
 from src.exceptions.handlers import (
     general_exception_handler,
@@ -129,6 +130,7 @@ app.include_router(profile_router)
 app.include_router(me_router)
 app.include_router(context_router)
 app.include_router(plan_router)
+app.include_router(explain_router)
 
 
 async def _placeholder_rule_count() -> int | None:

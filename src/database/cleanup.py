@@ -1,4 +1,4 @@
-"""CLI: `python -m src.database.cleanup` — delete expired sessions.
+"""CLI: `python -m src.database.cleanup` — delete expired sessions and cached explanations.
 
 Queries filter on `expires_at > now()` regardless of whether this has run, so a missed
 sweep is a storage cost and never a correctness bug. Logs a count and nothing else: no user
@@ -14,31 +14,37 @@ import sys
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from src.database.session import create_cli_engine
+from src.explain.store import delete_expired_explanations
 from src.sessions.service import delete_expired_sessions
 
 logger = logging.getLogger("src.database.cleanup")
 
 
-async def run_cleanup() -> int:
-    """Delete expired sessions. Returns how many rows went."""
+async def run_cleanup() -> tuple[int, int]:
+    """Delete expired sessions and cached explanations. Returns how many rows went, each."""
     engine = create_cli_engine()
     session_factory = async_sessionmaker(engine, expire_on_commit=False)
 
     try:
         async with session_factory() as db:
-            deleted = await delete_expired_sessions(db)
+            sessions = await delete_expired_sessions(db)
+            explanations = await delete_expired_explanations(db)
             await db.commit()
     finally:
         await engine.dispose()
 
-    return deleted
+    return sessions, explanations
 
 
 def main() -> int:
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
 
-    deleted = asyncio.run(run_cleanup())
-    logger.info("Deleted %d expired session(s)", deleted)
+    sessions, explanations = asyncio.run(run_cleanup())
+    logger.info(
+        "Deleted %d expired session(s) and %d expired cached explanation(s)",
+        sessions,
+        explanations,
+    )
 
     return 0
 

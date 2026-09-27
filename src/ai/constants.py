@@ -18,6 +18,44 @@ MAX_ACTIONS: Final = 30
 MAX_CITATIONS: Final = 5
 MAX_MISSING: Final = 10
 
+# --- The explain response ---
+# Smaller than a plan's, and separately capped rather than sharing `MAX_REPLY_CHARS`: an
+# explanation is two or three sentences about one field, and the panel shows it in a card rather
+# than in the chat column. A model that writes six sentences fails validation and is repaired once.
+MAX_EXPLANATION_CHARS: Final = 400
+
+# One example value — "08012345678", "Sole Proprietor". Eighty characters is a value, not a
+# sentence; anything longer is a second explanation wearing an example's clothes.
+MAX_EXAMPLE_CHARS: Final = 80
+
+# Three sources on one field. A field explained by five sources is a field the corpus covers
+# loosely, and showing all five in a side panel is noise the user has to read past.
+MAX_EXPLAIN_CITATIONS: Final = 3
+
+# --- Official sources block (the `/explain` context) ---
+# `/explain` retrieves *before* it calls the model, so the sources arrive in the prompt rather
+# than through a tool result. Fenced and escaped like the page snapshot: corpus text is copied
+# from a government website, which makes it evidence, not instructions.
+OFFICIAL_SOURCES_OPEN: Final = "<official_sources>"
+OFFICIAL_SOURCES_CLOSE: Final = "</official_sources>"
+OFFICIAL_SOURCES_OPEN_ESCAPED: Final = "‹official_sources›"
+OFFICIAL_SOURCES_CLOSE_ESCAPED: Final = "‹/official_sources›"
+
+# What one chunk contributes to an explain prompt. Three chunks at 1200 characters is about
+# 900 tokens, which leaves the whole explain context an order of magnitude inside `TOKEN_BUDGET`
+# — one field and no history is a small prompt by construction, so there is no overflow stage.
+MAX_RENDERED_CHUNKS: Final = 3
+MAX_RENDERED_CHUNK_CHARS: Final = 1200
+
+# The instruction text beside the field, as the spec caps it, and the user's own question.
+MAX_RENDERED_NEARBY_CHARS: Final = 300
+MAX_RENDERED_QUESTION_CHARS: Final = 500
+
+# What the model is asked when the user clicked Explain without typing anything. A fixed string
+# rather than an empty question, because a prompt whose last line is blank invites the model to
+# decide for itself what was being asked.
+DEFAULT_EXPLAIN_QUESTION: Final = "What is this field asking for?"
+
 # --- Page block ---
 # A long government form is ~40 fields; 80 leaves room for a multi-step page rendered at once
 # while still refusing a page built to bury the model in controls. Past it, the block says how

@@ -946,7 +946,8 @@ async def _explain() -> list[str]:
             searches("what is the fee"),
             answer(
                 {
-                    "reply": FEE_REPLY,
+                    "explanation": FEE_REPLY,
+                    "example": None,
                     "citations": [{"chunk_id": 7, "source_url": "https://example.gov.ng/fees"}],
                 },
             ),
@@ -975,9 +976,11 @@ async def _explain() -> list[str]:
         "the explain schema should be the one enforced",
     )
 
-    # And an unsupported claim is replaced, exactly as in a plan turn.
+    # And an unsupported claim is replaced, exactly as in a plan turn — the example with it.
     reset_locks()
-    ungrounded = FakeModelClient([answer({"reply": FEE_REPLY, "citations": []})] * 2)
+    ungrounded = FakeModelClient(
+        [answer({"explanation": FEE_REPLY, "example": "N5,000", "citations": []})] * 2,
+    )
     second = await run_explain_turn(
         context="Explain the fee.",
         retrieve=RetrievalStub(),
@@ -988,10 +991,45 @@ async def _explain() -> list[str]:
 
     expect(
         failures,
-        isinstance(second, ExplainTurn) and second.response.reply == UNVERIFIED_REPLY,
+        isinstance(second, ExplainTurn) and second.response.explanation == UNVERIFIED_REPLY,
         "a twice-ungrounded explain reply must be replaced",
     )
+    expect(
+        failures,
+        isinstance(second, ExplainTurn) and second.response.example is None,
+        "the example must go with the claim it restated",
+    )
     expect(failures, ungrounded.call_count == 2, "one repair, not more")
+
+    # Chunks handed to the turn already retrieved — how `/explain` calls it, having searched
+    # before deciding whether a model call was worth making — are citable without a tool call.
+    reset_locks()
+    seeded = FakeModelClient(
+        [
+            answer(
+                {
+                    "explanation": FEE_REPLY,
+                    "example": None,
+                    "citations": [{"chunk_id": 7, "source_url": "https://example.gov.ng/fees"}],
+                },
+            ),
+        ],
+    )
+    third = await run_explain_turn(
+        context="Explain the fee.",
+        retrieve=RetrievalStub(),
+        client=seeded,
+        session_id="s-explain-3",
+        user_id="u1",
+        chunks=(CHUNK,),
+    )
+
+    expect(
+        failures,
+        isinstance(third, ExplainTurn) and third.grounding == "grounded",
+        "a pre-retrieved chunk must be citable",
+    )
+    expect(failures, seeded.call_count == 1, "a seeded turn should need one model call")
 
     return failures
 
