@@ -23,7 +23,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from src.ai.schemas import Citation, ExtractedData, MissingItem, PlannedAction, PlanResponse, ValueRef
-from src.context.schemas import PageButton, PageField
+from src.context.schemas import PageButton, PageField, PageLink
 from src.documents.schemas import RetrievedChunk
 from src.guard.constants import REJECTION_MESSAGES, UNVERIFIED_REPLY
 from src.guard.service import guard_plan
@@ -48,6 +48,12 @@ FIELDS = [
 BUTTONS = [
     PageButton(field_id="b_next", text="Continue"),
     PageButton(field_id="b_submit", text="Submit Application", sensitive=True),
+]
+# A portal masthead: the routes off this page, one of them flagged and one of them off-site.
+LINKS = [
+    PageLink(field_id="g1-f2", text="Renew Licence", href="https://example.gov.ng/renew"),
+    PageLink(field_id="g1-f3", text="Make a payment", href="https://remita.net/pay",
+             external=True, sensitive=True),
 ]
 
 PROFILE: dict[str, str | None] = {
@@ -178,6 +184,60 @@ CASES: tuple[dict[str, Any], ...] = (
             []
             if plan.approved[0].type == "pause" and plan.approved[0].reason
             else ["a blocked clickSafe did not become a pause with a reason"]
+        ),
+    },
+    {
+        "name": "LINK_NOT_CLICKABLE — a clickSafe on a navigation link is refused, and becomes a pause",
+        "actions": [action("clickSafe", field_id="g1-f2")],
+        "codes": ["LINK_NOT_CLICKABLE"],
+        "approved": 1,
+        "check": lambda plan: (
+            []
+            if plan.approved[0].type == "pause" and plan.approved[0].reason
+            else ["a clickSafe on a link did not become a pause with a reason"]
+        ),
+    },
+    {
+        "name": "LINK_NOT_CLICKABLE — a flagged link is refused as a link, not as a blocked button",
+        "actions": [action("clickSafe", field_id="g1-f3")],
+        "codes": ["LINK_NOT_CLICKABLE"],
+        "approved": 1,
+    },
+    {
+        "name": "a link may be highlighted, which is how the answer is shown on the page",
+        "actions": [action("highlight", field_id="g1-f2", reason="Start here.")],
+        "codes": [],
+        "approved": 1,
+        "check": lambda plan: (
+            []
+            if plan.approved[0].type == "highlight" and plan.approved[0].field_id == "g1-f2"
+            else ["a highlight on a link was not approved"]
+        ),
+    },
+    {
+        "name": "our own field ids are taken out of the reply the user reads",
+        "reply": 'To start, select the "Renew Licence" option (g1-f2) on the landing page.',
+        "actions": [],
+        "codes": [],
+        "approved": 0,
+        "check": lambda plan: (
+            []
+            if "g1-f2" not in plan.reply
+            and "Renew Licence" in plan.reply
+            and plan.report.reply_ids_stripped == 1
+            else [f"the id survived in the reply: {plan.reply!r}"]
+        ),
+    },
+    {
+        "name": "a reply with no ids in it is left exactly as the model wrote it",
+        "reply": PLAIN_REPLY,
+        "actions": [],
+        "codes": [],
+        "approved": 0,
+        "check": lambda plan: (
+            []
+            if plan.reply == PLAIN_REPLY and plan.report.reply_ids_stripped == 0
+            else ["an untouched reply was rewritten"]
         ),
     },
     {
@@ -488,7 +548,12 @@ def _check_missing(plan: GuardedPlan) -> list[str]:
 WRITE_TYPES = frozenset({"fill", "select", "check"})
 
 
-def _invariants(plan: GuardedPlan, fields: list[PageField], buttons: list[PageButton]) -> list[str]:
+def _invariants(
+    plan: GuardedPlan,
+    fields: list[PageField],
+    buttons: list[PageButton],
+    links: list[PageLink] = (),  # type: ignore[assignment]
+) -> list[str]:
     """
     Definition of done item 2, checked on every plan this script produces rather than on the
     cases that happen to be about it. These are the properties whose violation puts a value the
@@ -497,9 +562,10 @@ def _invariants(plan: GuardedPlan, fields: list[PageField], buttons: list[PageBu
     failures = []
     field_index = {page_field.field_id: page_field for page_field in fields}
     button_index = {button.field_id: button for button in buttons}
+    link_index = {link.field_id: link for link in links}
 
     for approved in plan.approved:
-        if approved.field_id and approved.field_id not in field_index | button_index:
+        if approved.field_id and approved.field_id not in field_index | button_index | link_index:
             failures.append(f"approved action references an unknown id: {approved.field_id}")
             continue
 
@@ -516,9 +582,15 @@ def _invariants(plan: GuardedPlan, fields: list[PageField], buttons: list[PageBu
                 failures.append(f"a write carries no value or no provenance: {approved.field_id}")
 
         if approved.type == "clickSafe":
+            # A link is never among the approved clicks, whatever the model asked for: following
+            # one navigates the tab away, which is the user's decision and not ours.
+            if approved.field_id in link_index:
+                failures.append(f"a clickSafe on a navigation link was approved: {approved.field_id}")
             button = button_index.get(approved.field_id or "")
             if button is None or button.sensitive:
                 failures.append(f"a blocked or unknown button was approved: {approved.field_id}")
+
+    failures += _no_ids_in_the_reply(plan, (*field_index, *button_index, *link_index))
 
     for rejected in plan.rejected:
         if rejected.message != REJECTION_MESSAGES.get(rejected.code):
@@ -527,6 +599,22 @@ def _invariants(plan: GuardedPlan, fields: list[PageField], buttons: list[PageBu
     failures += _report_carries_no_content(plan, fields)
 
     return failures
+
+
+def _no_ids_in_the_reply(plan: GuardedPlan, ids: tuple[str, ...]) -> list[str]:
+    """
+    Our own handle for a control never appears in the sentence the panel prints.
+
+    Checked on every plan this script produces rather than only on the cases about it: an id in
+    the reply is how a live turn told a citizen to "select the Renew Licence option (g1-f2)", and
+    it would come back the moment the prompt drifted. Only ids with a digit in them are looked
+    for, which is the same conservative rule the guard strips by.
+    """
+    return [
+        f"a field id reached the reply: {field_id}"
+        for field_id in ids
+        if any(char.isdigit() for char in field_id) and field_id in plan.reply
+    ]
 
 
 def _report_carries_no_content(plan: GuardedPlan, fields: list[PageField]) -> list[str]:
@@ -561,10 +649,12 @@ def _run_case(case: dict[str, Any]) -> list[str]:
         citations=case.get("citations", []),
         missing=case.get("missing", []),
     )
+    links: list[PageLink] = case.get("links", LINKS)
     plan = guard_plan(
         response,
         fields=fields,
         buttons=BUTTONS,
+        links=links,
         profile=case.get("profile", PROFILE),
         chat_values=case.get("chat", CHAT),
         chunks=case.get("chunks", ()),
@@ -572,7 +662,7 @@ def _run_case(case: dict[str, Any]) -> list[str]:
         repair_attempted=case.get("repair_attempted", False),
     )
 
-    failures = _invariants(plan, fields, BUTTONS)
+    failures = _invariants(plan, fields, BUTTONS, links)
     SEEN_CODES.update(item.code for item in plan.rejected)
 
     if "codes" in case:

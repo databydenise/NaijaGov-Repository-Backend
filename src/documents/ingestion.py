@@ -49,36 +49,38 @@ async def existing_hashes(db: AsyncSession, source_url: str) -> set[str]:
 
 
 async def insert_documents(db: AsyncSession, documents: Sequence[PendingDocument]) -> int:
-    """Insert chunks, skipping any that collide on `(source_url, content_sha256)`.
+    """
+    Insert chunks. Every one of them — there is no longer a constraint to skip on.
 
-    `ON CONFLICT DO NOTHING` on top of the hash check above, not instead of it. The hash
-    check saves the embedding spend; this closes the window where two runs overlap, and
-    makes the guarantee the schema's rather than the script's.
+    Migration 0010 dropped `uq_documents_source_content`, on request, so a corpus already
+    containing exact-content duplicates across several ingestion runs could be loaded whole
+    rather than have the index silently keep one copy of each. That also removes the
+    database-side backstop `scripts.ingest` used to lean on: its own `existing_hashes()`
+    check, made before any embedding call, is now the only thing standing between a normal
+    ingestion run and a duplicate row, and two overlapping runs are no longer caught by
+    anything downstream of that check.
 
-    Returns how many rows were actually written.
+    Returns how many rows were written, which with no conflict target is always
+    `len(documents)` — kept as a return value so a caller does not have to know that.
     """
     if not documents:
         return 0
 
-    statement = (
-        insert(Document)
-        .values(
-            [
-                {
-                    "title": document.title,
-                    "agency": document.agency,
-                    "service": document.service,
-                    "content": document.content,
-                    "content_sha256": document.content_sha256,
-                    "source_url": document.source_url,
-                    "source_kind": document.source_kind,
-                    "embedding": document.embedding,
-                    "embedding_model": document.embedding_model,
-                }
-                for document in documents
-            ],
-        )
-        .on_conflict_do_nothing(index_elements=["source_url", "content_sha256"])
+    statement = insert(Document).values(
+        [
+            {
+                "title": document.title,
+                "agency": document.agency,
+                "service": document.service,
+                "content": document.content,
+                "content_sha256": document.content_sha256,
+                "source_url": document.source_url,
+                "source_kind": document.source_kind,
+                "embedding": document.embedding,
+                "embedding_model": document.embedding_model,
+            }
+            for document in documents
+        ],
     )
 
     result = await db.execute(statement)

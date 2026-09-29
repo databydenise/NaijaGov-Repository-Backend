@@ -1,4 +1,6 @@
-<!-- v3 -->
+<!-- v5 -->
+{workflow_block}
+
 {page_block}
 
 {user_data_block}

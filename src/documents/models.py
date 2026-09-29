@@ -22,19 +22,6 @@ from src.documents.constants import EMBEDDING_DIMENSIONS
 class Document(Base):
     __tablename__ = "documents"
     __table_args__ = (
-        # The same chunk from the same page is one row, however many times ingestion runs.
-        # The prototype had no such constraint, ingested the FAQ twice, and one duplicated
-        # chunk then filled every result slot — which is how a question about renewal fees
-        # came back with three near-identical chunks about renewal timing.
-        # A unique index rather than a unique constraint, matching migration 0006 exactly
-        # so autogenerate never sees a difference between the two. Either would enforce it;
-        # only one keeps `alembic check` quiet.
-        Index(
-            "uq_documents_source_content",
-            "source_url",
-            "content_sha256",
-            unique=True,
-        ),
         # Narrowing a search to one agency's material, when the caller knows which.
         Index("ix_documents_agency_service", "agency", "service"),
     )
@@ -54,8 +41,11 @@ class Document(Base):
     # the text the guard checks a claim against.
     content: Mapped[str] = mapped_column(Text, nullable=False)
 
-    # SHA-256 of the whitespace-normalised chunk. Half of the dedupe key, and the reason a
-    # re-run costs no embedding calls.
+    # SHA-256 of the whitespace-normalised chunk. `scripts.ingest` reads the hashes already
+    # stored for a URL before embedding, so a re-run costs nothing for a chunk already here —
+    # a Python-side check now, not a database constraint. Migration 0010 dropped the unique
+    # index this used to double as half of, on request, to let in a corpus that already
+    # contained exact-content duplicates across several ingestion runs.
     content_sha256: Mapped[str] = mapped_column(Text, nullable=False)
 
     source_url: Mapped[str] = mapped_column(Text, nullable=False)

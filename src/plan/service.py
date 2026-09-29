@@ -24,7 +24,7 @@ the user is about to see in the preview.
 import logging
 import time
 import uuid
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -32,7 +32,12 @@ from src.agent.constants import TURN_BUDGET_SECONDS
 from src.agent.plan import run_plan_turn
 from src.agent.schemas import PlanTurn, TurnFailure
 from src.ai.client import shared_client
-from src.ai.context import StepView, render_plan_context
+from src.ai.context import (
+    StepView,
+    WorkflowStepLine,
+    WorkflowView,
+    render_plan_context,
+)
 from src.auth.schemas import AuthedUser
 from src.context.utils import compute_page_hash
 from src.documents.service import search_government_information
@@ -51,6 +56,7 @@ from src.profiles.constants import PROFILE_FIELDS
 from src.sessions import service as sessions_service
 from src.sessions.models import Session
 from src.workflows import service as workflows_service
+from src.workflows.schemas import Step
 
 logger = logging.getLogger(__name__)
 
@@ -83,37 +89,84 @@ async def _profile_values(db: AsyncSession, user_id: uuid.UUID) -> dict[str, str
     return {key: getattr(profile, key, None) for key in PROFILE_FIELDS}
 
 
-async def _step_of(db: AsyncSession, session: Session) -> tuple[StepView, StepOut | None]:
+async def _workflow_view(
+    db: AsyncSession,
+    workflow_id: str,
+    steps: Sequence[Step],
+    current_index: int | None,
+) -> WorkflowView | None:
     """
-    Where this page sits in its workflow: one view for the prompt, one for the response.
+    The whole workflow as the prompt shows it, or None if the registry no longer holds it.
+
+    The steps are already in hand — the caller read them to place the current page — so this adds
+    one cached registry read for the workflow's own name and agency and no database work at all on
+    a warm cache. That cheapness is the point: "what do I do next" is the most common question the
+    panel gets and the one the page itself can least often answer, so it must not cost a query.
+    """
+    workflows = await workflows_service.list_active_workflows(db)
+    workflow = next((item for item in workflows if item.id == workflow_id), None)
+
+    if workflow is None:
+        return None
+
+    return WorkflowView(
+        name=workflow.name,
+        agency=workflow.agency,
+        steps=tuple(
+            WorkflowStepLine(
+                name=item.name,
+                index=item.index,
+                is_final=item.is_final,
+                field_labels=item.field_labels,
+            )
+            for item in steps
+        ),
+        current_index=current_index,
+    )
+
+
+async def _step_of(
+    db: AsyncSession,
+    session: Session,
+) -> tuple[StepView, StepOut | None, WorkflowView | None]:
+    """
+    Where this page sits in its workflow, in the three shapes its callers need.
+
+    One view for the prompt's step line, one for the response, and the whole workflow for the
+    `<workflow>` block.
 
     A session with no workflow is normal, not broken — `/context` writes one for any page outside
     the registry and the panel still offers chat there. That page gets a step view that claims
-    nothing about position and no `step` in the response, rather than a fabricated "step 1 of 1"
-    for a workflow we have never seen.
+    nothing about position, no `step` in the response and no workflow block, rather than a
+    fabricated "step 1 of 1" for a workflow we have never seen.
 
     Both reads are served from the registry cache, so this is usually no database work at all.
     """
     if session.workflow_id is None or session.step_id is None:
-        return StepView(name=UNKNOWN_STEP_NAME, index=1, total=1), None
+        return StepView(name=UNKNOWN_STEP_NAME, index=1, total=1), None, None
 
     steps = await workflows_service.get_steps(db, session.workflow_id)
     step = next((item for item in steps if item.id == session.step_id), None)
 
     if step is None:
-        # The workflow was re-seeded under the session's feet. The page is still readable; only
-        # our claim about where the user is has gone stale.
+        # The workflow was re-seeded under the session's feet. The page is still readable, and the
+        # workflow's own steps are still worth showing — only our claim about *which* of them the
+        # user is on has gone stale, so the list is rendered with nothing marked.
         logger.info(
             "session step is no longer in the registry (workflow=%s step=%s)",
             session.workflow_id,
             session.step_id,
         )
+        workflow = await _workflow_view(db, session.workflow_id, steps, None)
 
-        return StepView(name=UNKNOWN_STEP_NAME, index=1, total=1), None
+        return StepView(name=UNKNOWN_STEP_NAME, index=1, total=1), None, workflow
+
+    workflow = await _workflow_view(db, session.workflow_id, steps, step.index)
 
     return (
         StepView(name=step.name, index=step.index, total=len(steps)),
         StepOut(id=step.id, name=step.name, index=step.index, total=len(steps)),
+        workflow,
     )
 
 
@@ -124,6 +177,7 @@ async def _run_turn(  # noqa: PLR0913  # every argument is a distinct input to t
     user_id: uuid.UUID,
     profile: Mapping[str, str | None],
     step_view: StepView,
+    workflow: WorkflowView | None,
     started: float,
 ) -> PlanTurn | TurnFailure:
     """Render the context and run the turn. No database work, and nothing is written."""
@@ -131,6 +185,8 @@ async def _run_turn(  # noqa: PLR0913  # every argument is a distinct input to t
         step=step_view,
         fields=payload.fields,
         buttons=payload.buttons,
+        links=payload.links,
+        workflow=workflow,
         profile=profile,
         chat_values=session.chat_values,
         history=session.history,
@@ -141,6 +197,7 @@ async def _run_turn(  # noqa: PLR0913  # every argument is a distinct input to t
         context=context,
         fields=payload.fields,
         buttons=payload.buttons,
+        links=payload.links,
         profile=profile,
         chat_values=session.chat_values,
         blocked_field_ids=blocked_field_ids(payload),
@@ -219,7 +276,7 @@ async def create_plan(
         )
 
     profile = await _profile_values(db, user.id)
-    step_view, step_out = await _step_of(db, session)
+    step_view, step_out, workflow = await _step_of(db, session)
 
     outcome = await _run_turn(
         payload=payload,
@@ -227,6 +284,7 @@ async def create_plan(
         user_id=user.id,
         profile=profile,
         step_view=step_view,
+        workflow=workflow,
         started=started,
     )
 

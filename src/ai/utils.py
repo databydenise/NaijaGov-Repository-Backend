@@ -22,6 +22,10 @@ from src.ai.constants import (
     SNAPSHOT_OPEN_ESCAPED,
     USER_DATA_CLOSE,
     USER_DATA_OPEN,
+    WORKFLOW_CLOSE,
+    WORKFLOW_CLOSE_ESCAPED,
+    WORKFLOW_OPEN,
+    WORKFLOW_OPEN_ESCAPED,
 )
 
 # Control characters (C0 and C1, including newline and tab) become a space; runs of whitespace
@@ -41,6 +45,11 @@ _DELIMITER_SWAPS: Final[tuple[tuple[str, str], ...]] = (
     # rather than from a hostile page, but it is still text nobody on this side wrote.
     (OFFICIAL_SOURCES_OPEN, OFFICIAL_SOURCES_OPEN_ESCAPED),
     (OFFICIAL_SOURCES_CLOSE, OFFICIAL_SOURCES_CLOSE_ESCAPED),
+    # The registry block. This one matters most of the three: it is the only block the prompt
+    # tells the model to *trust*, so a page label that closed it early would be writing with our
+    # authority rather than merely adding noise to a block already declared untrustworthy.
+    (WORKFLOW_OPEN, WORKFLOW_OPEN_ESCAPED),
+    (WORKFLOW_CLOSE, WORKFLOW_CLOSE_ESCAPED),
 )
 
 

@@ -29,10 +29,13 @@ from src.ai.constants import (
     MAX_PAGE_FIELDS,
     MAX_RENDERED_CHUNK_CHARS,
     MAX_RENDERED_CHUNKS,
+    MAX_RENDERED_HREF_CHARS,
     MAX_RENDERED_LABEL_CHARS,
     MAX_RENDERED_NEARBY_CHARS,
     MAX_RENDERED_OPTIONS,
     MAX_RENDERED_QUESTION_CHARS,
+    MAX_RENDERED_STEP_LABELS,
+    MAX_RENDERED_STEPS,
     OFFICIAL_SOURCES_CLOSE,
     OFFICIAL_SOURCES_OPEN,
     SNAPSHOT_CLOSE,
@@ -40,10 +43,12 @@ from src.ai.constants import (
     TOKEN_BUDGET,
     USER_DATA_CLOSE,
     USER_DATA_OPEN,
+    WORKFLOW_CLOSE,
+    WORKFLOW_OPEN,
 )
 from src.ai.prompt_loader import USER_EXPLAIN, USER_PLAN
 from src.ai.utils import clean, estimate_tokens, mask_value
-from src.context.schemas import PageButton, PageField
+from src.context.schemas import PageButton, PageField, PageLink
 from src.documents.schemas import RetrievedChunk
 from src.profiles.constants import PROFILE_FIELDS
 
@@ -57,6 +62,36 @@ class StepView:
     name: str
     index: int
     total: int
+
+
+@dataclass(frozen=True)
+class WorkflowStepLine:
+    """One step of the workflow as the registry holds it, for the `<workflow>` block."""
+
+    name: str
+    index: int
+    is_final: bool
+    field_labels: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class WorkflowView:
+    """
+    The whole workflow, from our own registry rather than from the page.
+
+    This is what makes "where do I start?", "what comes next?" and "what will I need?" answerable
+    without reading the DOM — which matters most on the pages where the DOM says least. A portal
+    landing page has no form on it, and before this the only honest answer available to the model
+    was to describe its own empty input back to the user.
+
+    `current_index` is the step the user is on, matched by `index`. None for a page we placed in a
+    workflow but not on a step, which renders the list with nothing marked rather than guessing.
+    """
+
+    name: str
+    agency: str
+    steps: tuple[WorkflowStepLine, ...] = ()
+    current_index: int | None = None
 
 
 @dataclass(frozen=True)
@@ -112,16 +147,42 @@ def _render_field_line(page_field: PageField) -> str:
     return "  " + " | ".join(parts)
 
 
-def render_page_block(
+def _render_link_line(link: PageLink) -> str:
+    """One `  id | text | href | status` line. `status` is never "allowed": a link is not ours."""
+    parts = [
+        link.field_id,
+        clean(link.text, MAX_RENDERED_LABEL_CHARS),
+        clean(link.href, MAX_RENDERED_HREF_CHARS) or "(no address)",
+    ]
+
+    if link.sensitive:
+        parts.append("BLOCKED: sensitive")
+    elif link.external:
+        parts.append("leaves this site")
+    else:
+        parts.append("same site")
+
+    return "  " + " | ".join(parts)
+
+
+def render_page_block(  # noqa: PLR0913  # the snapshot's own parts, plus one rendering switch
     step: StepView,
     fields: Sequence[PageField],
     buttons: Sequence[PageButton],
+    links: Sequence[PageLink] = (),
     *,
     required_only: bool = False,
 ) -> str:
     """
     The `<page_snapshot>` block: the step line, then fields (required first, capped at 80), then
-    buttons. `required_only` drops the optional fields — the budget's second overflow stage.
+    buttons, then navigation links. `required_only` drops the optional fields — the budget's
+    second overflow stage.
+
+    Links are rendered under their own heading, and the heading says they cannot be clicked. That
+    is the whole reason they are not folded in with the buttons: a landing page has no form and no
+    buttons, so without this section the model is shown an empty page and can only answer by
+    asking the user to go and look — which is the product failing at its job. With it, the model
+    can name the route the user needs. It still may not take that route for them.
     """
     ordered = _order_fields(fields)
     if required_only:
@@ -134,7 +195,14 @@ def render_page_block(
     lines.append(f"STEP: {clean(step.name)} ({step.index} of {step.total})")
 
     lines.append("FIELDS")
-    lines.extend(_render_field_line(page_field) for page_field in shown)
+    if shown:
+        lines.extend(_render_field_line(page_field) for page_field in shown)
+    else:
+        # Said in words rather than left as a bare heading. A landing page has no form on it, and
+        # an empty list under a heading is the shape that produced "the current page snapshot
+        # shows no fields or buttons" as an answer to a citizen — the model reporting its input
+        # because nothing told it that an empty form is an ordinary page rather than a fault.
+        lines.append("  (none — this page has no form on it)")
     if dropped > 0:
         lines.append(f"  … {dropped} more fields not shown")
 
@@ -144,7 +212,68 @@ def render_page_block(
             status = "BLOCKED: sensitive" if button.sensitive else "allowed"
             lines.append(f"  {button.field_id} | {clean(button.text, MAX_RENDERED_LABEL_CHARS)} | {status}")
 
+    if links:
+        lines.append("LINKS (navigation — name one in your reply, never click it yourself)")
+        lines.extend(_render_link_line(link) for link in links)
+
     lines.append(SNAPSHOT_CLOSE)
+
+    return "\n".join(lines)
+
+
+def _render_step_line(step: WorkflowStepLine, *, is_current: bool) -> list[str]:
+    """One step as one or two lines: its position and name, then what it asks for."""
+    marker = "  ← the page you are on" if is_current else ""
+    if step.is_final and not is_current:
+        marker = "  (the last step)"
+
+    lines = [f"  {step.index}. {clean(step.name, MAX_RENDERED_LABEL_CHARS)}{marker}"]
+
+    if step.field_labels:
+        shown = [
+            clean(label, MAX_RENDERED_LABEL_CHARS)
+            for label in step.field_labels[:MAX_RENDERED_STEP_LABELS]
+        ]
+        rendered = ", ".join(shown)
+        if len(step.field_labels) > MAX_RENDERED_STEP_LABELS:
+            rendered += ", …"
+        lines.append(f"     asks for: {rendered}")
+
+    return lines
+
+
+def render_workflow_block(workflow: WorkflowView | None) -> str:
+    """
+    The `<workflow>` block: which process this is, and every step of it in order.
+
+    Deliberately **outside** `<page_snapshot>`. Everything in that block is text copied from a web
+    page and is declared untrusted; this is the registry we seeded and checked in ourselves, and
+    the model is told it may rely on it. Two kinds of data with opposite trust levels must not
+    share a fence — and `ai/utils.clean` escapes this block's delimiters in page text so a label
+    cannot forge one.
+
+    What it is *not* is a source. A step name is a fact about the portal's own form; a fee, a
+    processing time or a document requirement is a claim about government, and those still come
+    only from retrieval. The system prompt says so, and the guard's grounding check is unchanged.
+    """
+    if workflow is None or not workflow.steps:
+        return ""
+
+    lines = [
+        WORKFLOW_OPEN,
+        f"{clean(workflow.name)} — {clean(workflow.agency)}",
+        f"STEPS ({len(workflow.steps)} in all, from our own records, not read from this page):",
+    ]
+
+    for step in workflow.steps[:MAX_RENDERED_STEPS]:
+        lines.extend(
+            _render_step_line(step, is_current=step.index == workflow.current_index),
+        )
+
+    if len(workflow.steps) > MAX_RENDERED_STEPS:
+        lines.append(f"  … {len(workflow.steps) - MAX_RENDERED_STEPS} more steps not shown")
+
+    lines.append(WORKFLOW_CLOSE)
 
     return "\n".join(lines)
 
@@ -210,11 +339,13 @@ def render_history_block(history: Sequence[Mapping[str, Any]]) -> str:
     return "\n".join(["CONVERSATION SO FAR:", *recent])
 
 
-def render_plan_context(
+def render_plan_context(  # noqa: PLR0913  # one keyword per part of the rendered context
     *,
     step: StepView,
     fields: Sequence[PageField],
     buttons: Sequence[PageButton],
+    links: Sequence[PageLink] = (),
+    workflow: WorkflowView | None = None,
     profile: Mapping[str, str | None],
     chat_values: Mapping[str, str],
     history: Sequence[Mapping[str, Any]],
@@ -225,20 +356,27 @@ def render_plan_context(
     token budget. On overflow, drop in the order the spec sets — history first, then non-required
     fields — logging each drop, because truncation correlates with worse answers. Retrieved chunks
     reach the model through the search tool result, not this string, so their budgeting is P4's.
+
+    The `<workflow>` block is never dropped. It is a few hundred characters whatever the page is,
+    and it is the only part of this context that survives a page with nothing on it — dropping it
+    to make room for form fields would take the answer away from precisely the pages that have no
+    form to describe.
     """
     user_data_block = render_user_data_block(profile, chat_values)
+    workflow_block = render_workflow_block(workflow)
     clean_message = clean(message)
     truncated: list[str] = []
 
     def assemble(page_block: str, history_block: str) -> str:
         return USER_PLAN.format(
+            workflow_block=workflow_block,
             page_block=page_block,
             user_data_block=user_data_block,
             history_block=history_block,
             message=clean_message,
         )
 
-    page_block = render_page_block(step, fields, buttons)
+    page_block = render_page_block(step, fields, buttons, links)
     history_block = render_history_block(history)
     text = assemble(page_block, history_block)
 
@@ -260,7 +398,7 @@ def render_plan_context(
                 "plan context over budget; dropping %d non-required fields",
                 len(fields) - required,
             )
-            page_block = render_page_block(step, fields, buttons, required_only=True)
+            page_block = render_page_block(step, fields, buttons, links, required_only=True)
             text = assemble(page_block, history_block)
 
     return PlanContext(text=text, estimated_tokens=estimate_tokens(text), truncated=truncated)

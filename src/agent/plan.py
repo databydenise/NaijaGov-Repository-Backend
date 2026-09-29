@@ -39,7 +39,7 @@ from src.ai.client import Message, ModelClient
 from src.ai.context import PlanContext
 from src.ai.prompt_loader import SYSTEM_PLAN
 from src.ai.schemas import PLAN_RESPONSE_SCHEMA, PlanResponse
-from src.context.schemas import PageButton, PageField
+from src.context.schemas import PageButton, PageField, PageLink
 from src.guard.schemas import GuardedPlan
 from src.guard.service import guard_plan
 
@@ -73,6 +73,7 @@ async def run_plan_turn(
     context: PlanContext,
     fields: Sequence[PageField],
     buttons: Sequence[PageButton] = (),
+    links: Sequence[PageLink] = (),
     profile: Mapping[str, str | None],
     chat_values: Mapping[str, str] | None = None,
     blocked_field_ids: Collection[str] = (),
@@ -86,9 +87,9 @@ async def run_plan_turn(
     Run one plan turn: the model, retrieval, the guard, and at most one repair.
 
     `context` is P2's rendering — the page block, the user-data block, the history and the message,
-    already under its token budget. `fields`, `buttons` and `blocked_field_ids` are *this* turn's
-    snapshot, the one the request was made against; the guard checks the answer against them and
-    nothing else. `profile` and `chat_values` hold the real values, which the model never sees and
+    already under its token budget. `fields`, `buttons`, `links` and `blocked_field_ids` are *this*
+    turn's snapshot, the one the request was made against; the guard checks the answer against them
+    and nothing else. `profile` and `chat_values` hold the real values, which the model never sees and
     the guard substitutes after validation.
 
     `retrieve` and `client` are injected — `search_government_information` and `OpenAIClient` in
@@ -123,6 +124,7 @@ async def run_plan_turn(
                         subject,
                         fields=fields,
                         buttons=buttons,
+                        links=links,
                         profile=profile,
                         chat_values=chat_values,
                         chunks=run.chunks,

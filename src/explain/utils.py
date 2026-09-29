@@ -24,6 +24,7 @@ from src.explain.constants import (
 )
 from src.explain.models import ExplanationCache
 from src.explain.schemas import ExplainResponse, SourceOut
+from src.guard.utils import strip_field_ids
 
 # The kind a sensitive field falls back to when its label matches none of the keyword lists.
 GENERIC_KIND = "generic"
@@ -176,10 +177,17 @@ def answer_from_turn(field_id: str, outcome: ExplainTurn) -> ExplainResponse:
     unsupported in it, and showing a caveat beside "this field asks for your surname" would teach
     the user to ignore caveats.
     """
+    # The field's own id, taken back out of the prose. `/explain` shows the model one field and
+    # names it with the id the extension will resolve — which is exactly the id that has no
+    # business in a sentence a citizen reads. Stripped here rather than only asked for in the
+    # prompt, and before the answer is cached, so a leak cannot be stored for a week.
+    explanation, _ = strip_field_ids(outcome.response.explanation, (field_id,))
+    example, _ = strip_field_ids(outcome.response.example or "", (field_id,))
+
     return ExplainResponse(
         field_id=field_id,
-        explanation=outcome.response.explanation,
-        example=outcome.response.example,
+        explanation=explanation,
+        example=example or None,
         sources=to_sources(outcome.response.citations, outcome.chunks),
         grounded=outcome.grounding != "unverified",
         cached=False,

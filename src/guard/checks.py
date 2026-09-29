@@ -16,7 +16,7 @@ alternatives puts a value the user never approved into a government form.
 from collections.abc import Collection, Mapping
 
 from src.ai.schemas import PlannedAction, ValueRef
-from src.context.schemas import PageButton, PageField
+from src.context.schemas import PageButton, PageField, PageLink
 from src.guard.constants import (
     CHECK_FIELD_TYPES,
     FILL_FIELD_TYPES,
@@ -156,9 +156,22 @@ def _check_pause(action: PlannedAction) -> ApprovedAction | RejectedAction:
 def _check_click_safe(
     action: PlannedAction,
     buttons: Mapping[str, PageButton],
+    links: Mapping[str, PageLink],
     blocked: Collection[str],
 ) -> ApprovedAction | RejectedAction:
-    """Validate safe-click requests and keep the main checker readable."""
+    """
+    Validate safe-click requests and keep the main checker readable.
+
+    A navigation link is refused before anything else, including before the id is looked up among
+    the buttons. Following a link navigates the tab away, and that is the user's decision for the
+    same reason pressing "Continue" is theirs: on a portal we cannot see past, the next page may
+    be a payment, a submission, or a session that cannot be returned from. The extension refuses
+    the same click independently — its validator clears `clickSafe` only for something button-like
+    — so this is the near side of a rule both repos hold, not a duplicate of one.
+    """
+    if action.field_id in links:
+        return reject(action, "LINK_NOT_CLICKABLE")
+
     button = buttons.get(action.field_id)  # pyright: ignore[reportArgumentType]
     if button is None:
         return reject(action, "UNKNOWN_FIELD")
@@ -176,9 +189,20 @@ def _check_read_only(
     action: PlannedAction,
     fields: Mapping[str, PageField],
     buttons: Mapping[str, PageButton],
+    links: Mapping[str, PageLink],
 ) -> ApprovedAction | RejectedAction:
-    """Allow read-only actions when they point to a known field or button."""
-    if action.field_id not in fields and action.field_id not in buttons:
+    """
+    Allow read-only actions when they point to a known field, button or link.
+
+    A link is a legitimate target here although it is never a legitimate `clickSafe`: highlighting
+    "Renew Licence" is how the answer to "where do I start?" is shown on the page rather than only
+    described in the reply, and highlighting changes nothing.
+    """
+    if (
+        action.field_id not in fields
+        and action.field_id not in buttons
+        and action.field_id not in links
+    ):
         return reject(action, "UNKNOWN_FIELD")
 
     return ApprovedAction(
@@ -207,10 +231,11 @@ def _check_writable_target(
     return _check_writable_field(action, page_field, profile, chat)
 
 
-def check_action(
+def check_action(  # noqa: PLR0913  # one argument per store the checks resolve against
     action: PlannedAction,
     fields: Mapping[str, PageField],
     buttons: Mapping[str, PageButton],
+    links: Mapping[str, PageLink],
     blocked: Collection[str],
     profile: Mapping[str, str | None],
     chat: Mapping[str, str],
@@ -227,9 +252,9 @@ def check_action(
         return reject(action, "MALFORMED")
 
     if action.type == "clickSafe":
-        return _check_click_safe(action, buttons, blocked)
+        return _check_click_safe(action, buttons, links, blocked)
 
     if action.type in READ_ONLY_ACTIONS:
-        return _check_read_only(action, fields, buttons)
+        return _check_read_only(action, fields, buttons, links)
 
     return _check_writable_target(action, fields, blocked, profile, chat)

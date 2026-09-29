@@ -25,6 +25,7 @@ RejectionCode = Literal[
     "DUPLICATE",
     "TOO_MANY",
     "BLOCKED_BUTTON",
+    "LINK_NOT_CLICKABLE",
     "MALFORMED",
 ]
 
@@ -43,12 +44,29 @@ REJECTION_MESSAGES: Final[dict[RejectionCode, str]] = {
     "BLOCKED_BUTTON": (
         "I don't press this button myself — have a look, then press it when you're ready."
     ),
+    "LINK_NOT_CLICKABLE": (
+        "That's a link to another page. Open it yourself when you're ready and I'll carry on "
+        "from there."
+    ),
     "MALFORMED": "I wasn't sure what that suggestion meant, so I didn't apply it.",
 }
 
 # What a rejected `clickSafe` turns into, so the user is told to click it rather than the
 # suggestion vanishing. The panel shows a `pause` with its reason.
 BLOCKED_BUTTON_PAUSE_REASON: Final = REJECTION_MESSAGES["BLOCKED_BUTTON"]
+
+# The same treatment for a `clickSafe` aimed at a navigation link, and for the same reason it is
+# refused at all: following a link navigates the tab away, which is the user's decision exactly as
+# "Continue" is. A model that asks for one has understood the page correctly and chosen the one
+# thing it may not do, so the answer is to hand that step to the user rather than to drop it.
+LINK_PAUSE_REASON: Final = REJECTION_MESSAGES["LINK_NOT_CLICKABLE"]
+
+# The two codes whose rejection is turned into a `pause`, so the step is handed to the user rather
+# than disappearing from the preview.
+PAUSE_ON_REJECTION: Final[dict[str, str]] = {
+    "BLOCKED_BUTTON": BLOCKED_BUTTON_PAUSE_REASON,
+    "LINK_NOT_CLICKABLE": LINK_PAUSE_REASON,
+}
 
 # Replaces the reply after a second attempt is still ungrounded. A fixed literal: no field, no
 # topic, nothing interpolated, so it cannot be turned into a claim of its own.

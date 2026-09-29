@@ -1,3 +1,12 @@
+<workflow>
+Business Name Registration — National Services Portal (Demo)
+STEPS (2 in all, from our own records, not read from this page):
+  1. Applicant Information  ← the page you are on
+     asks for: Full Name, Email Address, Phone Number, State, Local Government Area, Business Type
+  2. Verification & Submit  (the last step)
+     asks for: Password, One-Time Code, Declaration
+</workflow>
+
 <page_snapshot>
 STEP: Applicant Information (1 of 2)
 FIELDS

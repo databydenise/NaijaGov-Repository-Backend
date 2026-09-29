@@ -104,8 +104,19 @@ def _checkpoint(payload: ContextRequest) -> Checkpoint:
     The count comes from the content script's flags plus any field it marked sensitive,
     because the two are reported separately and a page can use either. Which fields, and
     why, stay out of the response and out of the log.
+
+    A flag naming a **navigation link** is deliberately not counted. A portal's masthead
+    carries "Make a payment" on every page of the site, including the pages that have no
+    payment on them, so counting it would put the panel into a checkpoint on a landing page
+    and stop the Copilot before it has done anything. The link is still flagged, and the
+    model is still shown it as BLOCKED — that is field-level sensitivity, the same call the
+    extension makes. Only a control on this page gates this page.
     """
-    flagged = {flag.field_id for flag in payload.sensitive_flags}
+    link_ids = {link.field_id for link in payload.links}
+
+    flagged = {
+        flag.field_id for flag in payload.sensitive_flags if flag.field_id not in link_ids
+    }
     flagged.update(field.field_id for field in payload.fields if field.sensitive)
 
     return Checkpoint(present=bool(flagged), count=len(flagged))

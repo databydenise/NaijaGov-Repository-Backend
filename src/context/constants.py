@@ -15,6 +15,13 @@ MAX_FIELDS: Final = 300
 MAX_BUTTONS: Final = 100
 MAX_OPTIONS: Final = 200
 
+# Navigation links get their own budget rather than sharing the button cap. A portal's landing
+# page is nothing but navigation — its masthead alone can fill a hundred entries — and one shared
+# ceiling would let a masthead crowd out the form controls that a fill actually needs. Matches the
+# extension's own cap, so a snapshot it considered complete is never refused here for being one
+# link over.
+MAX_LINKS: Final = 40
+
 # A label is a few words. Anything longer is a paragraph that happens to sit in a <label>,
 # and it is not what the matcher compares.
 MAX_LABEL_LENGTH: Final = 200

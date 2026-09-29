@@ -65,6 +65,27 @@ MAX_PAGE_FIELDS: Final = 80
 MAX_RENDERED_LABEL_CHARS: Final = 120
 # Enough to show the shape of a choice list without letting one <select> dominate the prompt.
 MAX_RENDERED_OPTIONS: Final = 20
+# A link's href, rendered so the model can tell a page of this portal from a payment processor.
+# Origin and path only by the time it arrives; this caps what a very long path contributes.
+MAX_RENDERED_HREF_CHARS: Final = 120
+
+# --- Workflow block ---
+# The registry's own view of where the user is. A Nigerian portal workflow is a handful of steps;
+# twenty is far past any we would seed and stops a mis-seeded workflow filling the prompt.
+MAX_RENDERED_STEPS: Final = 20
+# What each step asks for, so "what will I need next" is answerable. Capped per step because the
+# point is to tell the user what is coming, not to reproduce a form they cannot see yet.
+MAX_RENDERED_STEP_LABELS: Final = 8
+
+# The registry block's fence. Outside `<page_snapshot>` on purpose: this is our own hand-curated
+# data, not text copied from a page, and the two must not look alike to the model.
+WORKFLOW_OPEN: Final = "<workflow>"
+WORKFLOW_CLOSE: Final = "</workflow>"
+# Page text that forges this fence is the one injection this block newly makes possible: the
+# `<workflow>` block is presented to the model as *ours* and trustworthy, so a label that closed
+# it early could pass instructions off as the registry's. Escaped like every other delimiter.
+WORKFLOW_OPEN_ESCAPED: Final = "‹workflow›"
+WORKFLOW_CLOSE_ESCAPED: Final = "‹/workflow›"
 
 # --- Profile block ---
 # What a masked short value collapses to: first character, ellipsis, last two characters. A

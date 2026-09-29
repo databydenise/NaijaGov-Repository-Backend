@@ -15,7 +15,7 @@ from collections.abc import Mapping, Sequence
 
 from src.agent.schemas import PlanTurn
 from src.ai.schemas import Citation
-from src.context.schemas import PageButton, PageField
+from src.context.schemas import PageButton, PageField, PageLink
 from src.documents.schemas import RetrievedChunk
 from src.guard.schemas import ApprovedAction, GuardedPlan, RejectedAction
 from src.plan.constants import SOURCE_LABELS, UNKNOWN_SOURCE_LABEL
@@ -33,15 +33,19 @@ from src.plan.schemas import (
 def labels_by_field_id(
     fields: Sequence[PageField],
     buttons: Sequence[PageButton],
+    links: Sequence[PageLink] = (),
 ) -> dict[str, str]:
     """
-    Every id on the page and what it is called, buttons included.
+    Every id on the page and what it is called, buttons and navigation links included.
 
     Buttons are here because a `clickSafe` or a blocked-button `pause` names one, and a preview
-    row reading "I don't press this button myself" is clearer beside the button's own text.
+    row reading "I don't press this button myself" is clearer beside the button's own text. Links
+    are here for the same reason: a refused `clickSafe` on one, or a `highlight` pointing at it,
+    is only useful if the panel can say *which* — "Renew Licence", not an id.
     """
     labels = {page_field.field_id: page_field.label for page_field in fields}
     labels.update({button.field_id: button.text for button in buttons})
+    labels.update({link.field_id: link.text for link in links})
 
     return labels
 
@@ -186,7 +190,7 @@ def build_response(
 ) -> PlanResponse:
     """The preview, assembled from the guarded plan. Pure."""
     plan = outcome.plan
-    labels = labels_by_field_id(payload.fields, payload.buttons)
+    labels = labels_by_field_id(payload.fields, payload.buttons, payload.links)
 
     return PlanResponse(
         plan_id=plan_id,

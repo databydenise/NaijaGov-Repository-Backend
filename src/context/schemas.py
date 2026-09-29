@@ -21,6 +21,7 @@ from src.context.constants import (
     MAX_HEADING_LENGTH,
     MAX_HEADINGS,
     MAX_LABEL_LENGTH,
+    MAX_LINKS,
     MAX_OPTIONS,
     MAX_PAGE_HASH_LENGTH,
     MAX_SENSITIVE_FLAGS,
@@ -90,6 +91,32 @@ class PageButton(SnapshotModel):
     sensitive: bool = False
 
 
+class PageLink(SnapshotModel):
+    """
+    A navigation link: an `<a href>` that leads somewhere else.
+
+    Separate from `PageButton` because the two are answered differently. A button may be pressed
+    on the user's behalf when the extension has cleared it; a link never is — following one
+    navigates the tab away, and that stays the user's decision. The guard refuses a `clickSafe`
+    on anything in this list, and `ai/context.py` renders it under a heading that says so.
+
+    `href` is origin and path only: the extension strips the query string before sending, for the
+    same reason it strips it from `url`. A `method="get"` form puts what the user typed into the
+    next page's URL, and a query string is therefore page *values* wearing a link's clothes.
+
+    `sensitive` is the content script's judgement, passed through unchanged. It marks a link the
+    model should not steer the user towards — a payment page, say — and deliberately does **not**
+    raise a checkpoint: a masthead carries "Make a payment" on every page of a portal, including
+    the pages that have no payment on them.
+    """
+
+    field_id: FieldId
+    text: Label = ""
+    href: Annotated[str, Field(max_length=MAX_URL_LENGTH)] = ""
+    external: bool = False
+    sensitive: bool = False
+
+
 class SensitiveFlag(SnapshotModel):
     """
     A field the content script marked as a checkpoint.
@@ -118,6 +145,7 @@ class ContextRequest(SnapshotModel):
     )
     fields: list[PageField] = Field(default_factory=list, max_length=MAX_FIELDS)
     buttons: list[PageButton] = Field(default_factory=list, max_length=MAX_BUTTONS)
+    links: list[PageLink] = Field(default_factory=list, max_length=MAX_LINKS)
     sensitive_flags: list[SensitiveFlag] = Field(
         default_factory=list,
         max_length=MAX_SENSITIVE_FLAGS,

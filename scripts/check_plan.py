@@ -65,7 +65,7 @@ from src.sessions.models import Session
 from src.tokens.dependencies import require_token
 from src.turn_errors import FAILURE_STATUS
 from src.workflows import service as workflows_service
-from src.workflows.schemas import Step
+from src.workflows.schemas import ActiveWorkflow, Step
 
 # --- The page, the user, and the corpus every case runs against -------------------------------
 #
@@ -103,6 +103,24 @@ BUTTONS: list[dict[str, Any]] = [
     {"field_id": "b2", "text": "Submit Application", "sensitive": True},
 ]
 
+# A portal landing page: no form, no buttons, every route off it an ordinary <a href>. The
+# masthead's payment link is flagged, which must not gate the page.
+LINKS: list[dict[str, Any]] = [
+    {"field_id": "g1-f1", "text": "Home", "href": "https://portal.example.gov.ng/"},
+    {
+        "field_id": "g1-f2",
+        "text": "Renew Licence",
+        "href": "https://portal.example.gov.ng/renew",
+    },
+    {
+        "field_id": "g1-f3",
+        "text": "Make a payment",
+        "href": "https://remita.net/pay",
+        "external": True,
+        "sensitive": True,
+    },
+]
+
 PROFILE_VALUES = {
     "full_name": "Adaeze Okonkwo",
     "email": "adaeze@example.com",
@@ -130,6 +148,16 @@ STEPS = [
         is_final=True,
     ),
 ]
+
+# The workflow those steps belong to, as the registry cache hands it over. `/plan` reads it for
+# the `<workflow>` block's heading; the patterns are empty because nothing on this path matches a
+# URL — that is `/context`'s job and it has already been done by the time a plan is asked for.
+WORKFLOW = ActiveWorkflow(
+    id="demo_reg",
+    agency="National Services Portal (Demo)",
+    name="Business Name Registration",
+    url_patterns=(),
+)
 
 CHUNK = RetrievedChunk(
     chunk_id=7,
@@ -314,7 +342,10 @@ def page_hash_for(fields: list[dict[str, Any]] | None = None) -> str:
     from src.context.schemas import PageField
     from src.context.utils import compute_page_hash
 
-    parsed = [PageField.model_validate(item) for item in (fields or FIELDS)]
+    # `is None`, not falsy: an empty field list is a real page — a portal landing page has no form
+    # on it at all — and hashing the default snapshot for one would make it look like a page that
+    # changed under us.
+    parsed = [PageField.model_validate(item) for item in (FIELDS if fields is None else fields)]
 
     return compute_page_hash(URL, parsed)
 
@@ -377,9 +408,13 @@ def build_harness(
     async def stub_steps(*_args: Any, **_kwargs: Any) -> list[Step]:
         return STEPS
 
+    async def stub_workflows(*_args: Any, **_kwargs: Any) -> list[ActiveWorkflow]:
+        return [WORKFLOW]
+
     plan_service.shared_client = lambda: model  # type: ignore[assignment]
     plan_service.search_government_information = stub_retrieve  # type: ignore[assignment]
     workflows_service.get_steps = stub_steps  # type: ignore[assignment]
+    workflows_service.list_active_workflows = stub_workflows  # type: ignore[assignment]
 
     app.dependency_overrides[get_session] = lambda: db
     app.dependency_overrides[require_token] = lambda: AuthedUser(
@@ -1073,6 +1108,150 @@ async def check_unsupported_page_still_plans() -> list[str]:
     return failures
 
 
+async def check_landing_page_links() -> list[str]:
+    """
+    The reported bug, end to end: a landing page with links and no form.
+
+    Three things have to hold at once. The request is accepted with a `links` key at all — both
+    request models are `extra="forbid"`, so a field we have not declared is a 400 and the
+    extension's whole snapshot is lost. The link reaches the model, which is what makes an answer
+    possible on a page with no form. And the model's `clickSafe` on it is refused and handed back
+    to the user as a pause, with our own id taken out of the sentence they read.
+    """
+    failures: list[str] = []
+    session = make_session(page_hash=page_hash_for([]), workflow_id=None, step_id=None)
+    client, harness = build_harness(
+        [
+            plan_answer(
+                reply='To start, select the "Renew Licence" option (g1-f2) on this page.',
+                actions=[
+                    {"type": "clickSafe", "field_id": "g1-f2"},
+                    {"type": "highlight", "field_id": "g1-f2", "reason": "Start here."},
+                ],
+            ),
+        ],
+        session=session,
+    )
+
+    try:
+        response = client.post("/plan", json=body(fields=[], buttons=[], links=LINKS))
+        data = response.json().get("data", {})
+        actions = data.get("actions", [])
+        rejected = data.get("rejected", [])
+
+        expect(failures, response.status_code == 200, f"status was {response.status_code}")
+        expect(
+            failures,
+            "g1-f2" not in data.get("reply", ""),
+            "our own field id reached the reply the user reads",
+        )
+        expect(
+            failures,
+            "Renew Licence" in data.get("reply", ""),
+            "stripping the id took the link's name with it",
+        )
+        expect(
+            failures,
+            not any(item["type"] == "clickSafe" for item in actions),
+            "a clickSafe on a navigation link was approved",
+        )
+        expect(
+            failures,
+            any(item["type"] == "pause" for item in actions),
+            "the refused link click was not handed to the user as a pause",
+        )
+        expect(
+            failures,
+            any(item.get("label") == "Renew Licence" for item in rejected),
+            "the refusal did not name the link the user can see",
+        )
+        expect(
+            failures,
+            any(
+                item["type"] == "highlight" and item["field_id"] == "g1-f2" for item in actions
+            ),
+            "a highlight pointing at the link was not approved",
+        )
+
+        rendered = harness.model.calls[0].text_at(-1) if harness.model.calls else ""
+        expect(failures, "Renew Licence" in rendered, "the link never reached the model")
+        expect(
+            failures,
+            "no form on it" in rendered,
+            "a page with no fields was shown to the model as a bare empty list",
+        )
+    finally:
+        teardown(harness.logs)
+
+    return failures
+
+
+async def check_the_whole_workflow_reaches_the_model() -> list[str]:
+    """
+    "What comes next?" is answerable from the registry, without reading the page or the corpus.
+
+    The step the user is on is marked, the steps after it are named with what they ask for, and
+    none of it costs a search — the registry is already in memory behind a five-minute cache. This
+    is the half of the landing-page bug the links change could not fix: the page can tell the model
+    where to click, only our own records can tell it what happens after that.
+    """
+    failures: list[str] = []
+    session = make_session(page_hash=page_hash_for())
+    client, harness = build_harness(
+        [
+            plan_answer(
+                reply=(
+                    "You are on Applicant Information, the first of two steps. After it comes "
+                    "Verification, where you enter a one-time code and tick the declaration."
+                ),
+            ),
+        ],
+        session=session,
+    )
+
+    try:
+        response = client.post("/plan", json=body(message="What do I do after this page?"))
+        data = response.json().get("data", {})
+        rendered = harness.model.calls[0].text_at(-1) if harness.model.calls else ""
+
+        expect(failures, response.status_code == 200, f"status was {response.status_code}")
+        expect(
+            failures,
+            "Business Name Registration" in rendered,
+            "the workflow's name never reached the model",
+        )
+        expect(
+            failures,
+            "Verification" in rendered and "One-Time Code" in rendered,
+            "a later step and what it asks for never reached the model",
+        )
+        expect(
+            failures,
+            "← the page you are on" in rendered,
+            "the model was given the steps but not told which one the user is on",
+        )
+        expect(
+            failures,
+            rendered.index("</workflow>") < rendered.index("<page_snapshot>"),
+            "our own records were rendered inside the untrusted page block",
+        )
+        expect(
+            failures,
+            harness.retrieval_calls == 0,
+            "answering from the registry cost a corpus search",
+        )
+        expect(
+            failures,
+            data.get("grounding") == "not_required",
+            f"a structural answer was graded {data.get('grounding')}, not not_required",
+        )
+        expect(failures, data.get("reply"), "the reply was replaced")
+    finally:
+        teardown(harness.logs)
+
+    return failures
+
+
 async def check_logs_are_content_free() -> list[str]:
     """No message, reply, label, value or retrieved content in any log line."""
     failures: list[str] = []
@@ -1141,6 +1320,8 @@ CHECKS: list[tuple[str, Any]] = [
     ("an over-long message is refused", check_over_long_message),
     ("the rate limit holds", check_rate_limit),
     ("an unknown page still plans", check_unsupported_page_still_plans),
+    ("a landing page's links reach the model, and are never clicked", check_landing_page_links),
+    ("the whole workflow reaches the model", check_the_whole_workflow_reaches_the_model),
     ("no content in any log line", check_logs_are_content_free),
 ]
 

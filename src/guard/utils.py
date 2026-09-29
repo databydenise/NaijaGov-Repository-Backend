@@ -14,7 +14,7 @@ government form.
 """
 
 import re
-from collections.abc import Mapping
+from collections.abc import Collection, Mapping
 from typing import Final
 
 from pydantic import BaseModel
@@ -52,6 +52,72 @@ def clean_note(raw: str | None) -> str | None:
         return None
 
     return clean_value(raw)[:MAX_NOTE_CHARS] or None
+
+
+# An id we are willing to delete from the model's prose. It must look machine-made — one token of
+# letters, digits, hyphens and underscores, with at least one digit in it — because the content
+# script chooses these strings and nothing stops one being an ordinary word. `g1-f2` and `f7`
+# qualify; a hypothetical id of `email` does not, and survives. That is the safe direction to
+# fail: an id that reads as English is a word the user can read, while deleting every occurrence
+# of "email" from an answer about an email field would mangle it.
+_ID_LIKE: Final = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]*")
+_SPACE_BEFORE_PUNCTUATION: Final = re.compile(r"\s+([.,;:!?])")
+_EMPTY_ASIDE: Final = re.compile(r"\s*[(\[]\s*[)\]]")
+
+
+def strip_field_ids(text: str, field_ids: Collection[str]) -> tuple[str, int]:
+    """
+    The reply with our own field ids taken out of it, and how many occurrences went.
+
+    A field id is this service's internal handle for a control. It means nothing to a citizen, it
+    reads like an error code, and it appeared in a live reply inside a sentence the user was meant
+    to act on: *select the "Renew Licence" option (g1-f2)*. Ids belong in `actions[].field_id`,
+    where the extension resolves them, and nowhere a person reads.
+
+    The prompt asks for this too. This is the enforcement, because a prompt is a request and the
+    panel renders whatever comes back. A parenthesised id is removed with its brackets, since it
+    is an aside that adds nothing once the id is gone; a bare one is removed on its own.
+    """
+    removable = sorted(
+        (
+            field_id
+            for field_id in set(field_ids)
+            if _ID_LIKE.fullmatch(field_id) and any(char.isdigit() for char in field_id)
+        ),
+        key=len,
+        reverse=True,
+    )
+
+    if not removable:
+        return text, 0
+
+    alternation = "|".join(re.escape(field_id) for field_id in removable)
+    removed = 0
+
+    def drop(_match: re.Match[str]) -> str:
+        nonlocal removed
+        removed += 1
+
+        return ""
+
+    # Longest-first alternation, so `f1` cannot eat the front of `f12` and leave a stray `2`.
+    cleaned = re.sub(rf"\s*[(\[]\s*(?:{alternation})\s*[)\]]", drop, text)
+    cleaned = re.sub(
+        rf"(?<![A-Za-z0-9_-])(?:{alternation})(?![A-Za-z0-9_-])",
+        drop,
+        cleaned,
+    )
+
+    if not removed:
+        return text, 0
+
+    # Tidy what removal left behind: an empty bracket pair, a doubled space, a space before a
+    # full stop. Nothing here rewrites a word — only whitespace and now-empty punctuation moves.
+    cleaned = _EMPTY_ASIDE.sub("", cleaned)
+    cleaned = _WHITESPACE.sub(" ", cleaned)
+    cleaned = _SPACE_BEFORE_PUNCTUATION.sub(r"\1", cleaned)
+
+    return cleaned.strip(), removed
 
 
 def comparable(text: str) -> str:

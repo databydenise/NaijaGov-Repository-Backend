@@ -79,6 +79,9 @@ class GuardReport:
     missing_added: int = 0
     repair_requested: bool = False
     reply_replaced: bool = False
+    # How many of our own field ids were taken out of the reply. A count, never the ids: this is
+    # a measure of how often the prompt is being ignored, not a record of what was said.
+    reply_ids_stripped: int = 0
 
 
 @dataclass(frozen=True)

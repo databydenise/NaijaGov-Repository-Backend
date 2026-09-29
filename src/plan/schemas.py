@@ -23,11 +23,18 @@ from src.context.constants import (
     MAX_FIELDS,
     MAX_HEADING_LENGTH,
     MAX_HEADINGS,
+    MAX_LINKS,
     MAX_PAGE_HASH_LENGTH,
     MAX_SENSITIVE_FLAGS,
     MAX_URL_LENGTH,
 )
-from src.context.schemas import PageButton, PageField, SensitiveFlag, SnapshotModel
+from src.context.schemas import (
+    PageButton,
+    PageField,
+    PageLink,
+    SensitiveFlag,
+    SnapshotModel,
+)
 from src.plan.constants import MAX_CLIENT_PLAN_ID_CHARS, MAX_MESSAGE_CHARS
 
 
@@ -63,6 +70,7 @@ class PlanRequest(SnapshotModel):
     )
     fields: list[PageField] = Field(default_factory=list, max_length=MAX_FIELDS)
     buttons: list[PageButton] = Field(default_factory=list, max_length=MAX_BUTTONS)
+    links: list[PageLink] = Field(default_factory=list, max_length=MAX_LINKS)
     sensitive_flags: list[SensitiveFlag] = Field(
         default_factory=list,
         max_length=MAX_SENSITIVE_FLAGS,

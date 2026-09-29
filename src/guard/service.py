@@ -16,12 +16,12 @@ a last gate.
 from collections.abc import Collection, Mapping, Sequence
 
 from src.ai.schemas import PlanResponse
-from src.context.schemas import PageButton, PageField
+from src.context.schemas import PageButton, PageField, PageLink
 from src.documents.schemas import RetrievedChunk
 from src.guard.checks import check_action, reject
 from src.guard.constants import (
-    BLOCKED_BUTTON_PAUSE_REASON,
     MAX_APPROVED_ACTIONS,
+    PAUSE_ON_REJECTION,
     READ_ONLY_ACTIONS,
     UNVERIFIED_REPLY,
     GroundingVerdict,
@@ -29,7 +29,7 @@ from src.guard.constants import (
 from src.guard.grounding import grounding_verdict, verify_citations
 from src.guard.missing import merge_missing
 from src.guard.schemas import ApprovedAction, GuardedPlan, GuardReport, RejectedAction
-from src.guard.utils import chat_values_from, comparable
+from src.guard.utils import chat_values_from, comparable, strip_field_ids
 
 
 def _dedupe_key(approved: ApprovedAction) -> tuple[str, str]:
@@ -50,7 +50,7 @@ def _dedupe_key(approved: ApprovedAction) -> tuple[str, str]:
     return ("write", approved.field_id or "")
 
 
-def _report(
+def _report(  # noqa: PLR0913  # one keyword per counted outcome
     approved: Sequence[ApprovedAction],
     rejected: Sequence[RejectedAction],
     *,
@@ -61,6 +61,7 @@ def _report(
     missing_added: int,
     repair_requested: bool,
     reply_replaced: bool,
+    reply_ids_stripped: int,
 ) -> GuardReport:
     """Counts, codes and field ids. Never a value, never a label, never the reply."""
     codes: dict[str, int] = {}
@@ -80,14 +81,16 @@ def _report(
         missing_added=missing_added,
         repair_requested=repair_requested,
         reply_replaced=reply_replaced,
+        reply_ids_stripped=reply_ids_stripped,
     )
 
 
-def guard_plan(
+def guard_plan(  # noqa: PLR0913  # the snapshot, the stores, and the caller's own state
     response: PlanResponse,
     *,
     fields: Sequence[PageField],
     buttons: Sequence[PageButton] = (),
+    links: Sequence[PageLink] = (),
     profile: Mapping[str, str | None],
     chat_values: Mapping[str, str] | None = None,
     chunks: Sequence[RetrievedChunk] = (),
@@ -97,10 +100,12 @@ def guard_plan(
     """
     Check a model response against the page it was made about, and return a plan safe to show.
 
-    `fields` and `buttons` are this turn's snapshot — the one the request was made against, never
-    a stored one. `profile` holds real values; `chat_values` holds what the user typed in earlier
-    turns, and this turn's `extracted_data` is merged in. `chunks` are what retrieval returned
-    this turn, and a citation to anything else is dropped.
+    `fields`, `buttons` and `links` are this turn's snapshot — the one the request was made
+    against, never a stored one. `links` is kept apart from `buttons` because the two are answered
+    differently: a button may be pressed on the user's behalf, a link never is. `profile` holds
+    real values; `chat_values` holds what the user typed in earlier turns, and this turn's
+    `extracted_data` is merged in. `chunks` are what retrieval returned this turn, and a citation
+    to anything else is dropped.
 
     `blocked_field_ids` is the snapshot's `sensitive_flags` list. It carries the same signal as a
     field's own `sensitive` flag and is honoured as well as it, not instead: either one blocks.
@@ -110,22 +115,40 @@ def guard_plan(
     """
     field_index = {page_field.field_id: page_field for page_field in fields}
     button_index = {button.field_id: button for button in buttons}
+    link_index = {link.field_id: link for link in links}
     blocked = set(blocked_field_ids)
     chat = chat_values_from(chat_values, response.extracted_data)
+
+    # Our own handles for the page's controls, taken out of the sentence the panel prints. The
+    # prompt asks the model not to write them; this is what makes it so.
+    reply, ids_stripped = strip_field_ids(
+        response.reply,
+        (*field_index, *button_index, *link_index),
+    )
 
     approved: list[ApprovedAction] = []
     rejected: list[RejectedAction] = []
     keys: set[tuple[str, str]] = set()
 
     for action in response.actions:
-        outcome = check_action(action, field_index, button_index, blocked, profile, chat)
+        outcome = check_action(
+            action,
+            field_index,
+            button_index,
+            link_index,
+            blocked,
+            profile,
+            chat,
+        )
 
         if isinstance(outcome, RejectedAction):
             rejected.append(outcome)
-            if outcome.code != "BLOCKED_BUTTON":
+            pause_reason = PAUSE_ON_REJECTION.get(outcome.code)
+            if pause_reason is None:
                 continue
-            # A blocked button does not simply disappear: the user is asked to press it.
-            outcome = ApprovedAction(type="pause", reason=BLOCKED_BUTTON_PAUSE_REASON)
+            # A button we may not press, or a link we may not follow, does not simply disappear:
+            # the user is asked to do it themselves. The step is still the right next step.
+            outcome = ApprovedAction(type="pause", reason=pause_reason)
 
         # 7. Uniqueness — keep the first, reject the repeat.
         key = _dedupe_key(outcome)
@@ -150,9 +173,8 @@ def guard_plan(
     missing, added = merge_missing(response.missing, fields, approved, blocked, held)
 
     citations, dropped = verify_citations(response.citations, chunks)
-    verdict = grounding_verdict(response.reply, citations)
+    verdict = grounding_verdict(reply, citations)
 
-    reply = response.reply
     reply_replaced = False
     repair_requested = False
 
@@ -186,5 +208,6 @@ def guard_plan(
             missing_added=added,
             repair_requested=repair_requested,
             reply_replaced=reply_replaced,
+            reply_ids_stripped=ids_stripped,
         ),
     )
