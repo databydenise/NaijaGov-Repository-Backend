@@ -1,0 +1,48 @@
+databases:
+  - name: naijagov-db
+    plan: basic-256mb
+    postgresMajorVersion: "16"
+
+services:
+  - type: web
+    name: naijagov-api
+    runtime: python
+    plan: starter
+    buildCommand: pip install uv && uv sync --frozen
+    preDeployCommand: uv run alembic upgrade head
+    startCommand: uv run uvicorn src.main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: naijagov-db
+          property: connectionString
+      - key: DB_ECHO
+        value: "false"
+      - key: SESSION_TTL_HOURS
+        value: "24"
+      - key: ENV
+        value: production
+      - key: WEB_ORIGIN
+        sync: false
+      - key: EXTENSION_ORIGIN
+        sync: false
+      - key: JWT_SECRET
+        generateValue: true
+      - key: SESSION_TTL_DAYS
+        value: "7"
+      - key: TOKEN_TTL_DAYS
+        value: "30"
+      - key: DEMO_MODE
+        value: "false"
+      - key: DEMO_EMAIL
+        sync: false
+      - key: DEMO_PASSWORD
+        sync: false
+      - key: DEMO_TOKEN
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: EMBEDDING_MODEL
+        value: text-embedding-3-small
+      - key: RETRIEVAL_MAX_DISTANCE
+        value: "0.45"
