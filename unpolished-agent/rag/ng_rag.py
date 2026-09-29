@@ -1,121 +1,165 @@
 """
-NG Government Information RAG retrieval module.
+ng_rag.py
 
-This module is the backend-facing part of the RAG system built for the
-Nigeria government-services browser extension.
+Production-facing Nigeria Driver's Licence / FRSC RAG retrieval module.
 
-It does NOT scrape websites or populate the vector database. Those are
-offline/data-ingestion jobs. The backend only needs this module to search
-the existing Supabase pgvector database when the agent decides that it
-needs government information.
+The Colab notebook remains responsible for crawling/scraping, navigation
+discovery, deduplication, chunking, embeddings, and Supabase ingestion.
+
+This module is responsible only for retrieval for the backend AI agent.
+
+Backend contract:
+    search_government_information(query: str, limit: int = 3)
 """
 
 import os
 from typing import Any
 
 import psycopg2
-from pgvector.psycopg2 import register_vector
 from openai import OpenAI
+from pgvector.psycopg2 import register_vector
 
 
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
-# These must be provided by the backend environment, NOT Colab userdata.
-#
-# Required:
-#   OPENAI_API_KEY
-#   SUPABASE_HOST
-#   SUPABASE_DB_PASSWORD
-#
-# Optional:
-#   SUPABASE_PROJECT_REF
-#
-# Example:
-#   SUPABASE_PROJECT_REF=cpzayxaejvktgerjcmpx
-#
-PROJECT_REF = os.getenv("SUPABASE_PROJECT_REF", "cpzayxaejvktgerjcmpx")
 
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 SUPABASE_HOST = os.getenv("SUPABASE_HOST")
 SUPABASE_DB_PASSWORD = os.getenv("SUPABASE_DB_PASSWORD")
+SUPABASE_PROJECT_REF = os.getenv("SUPABASE_PROJECT_REF")
 
-if not OPENAI_API_KEY:
-    raise RuntimeError("Missing OPENAI_API_KEY environment variable.")
+SUPABASE_PORT = int(os.getenv("SUPABASE_PORT", "5432"))
+SUPABASE_DB = os.getenv("SUPABASE_DB", "postgres")
+SUPABASE_USER = os.getenv(
+    "SUPABASE_USER",
+    f"postgres.{SUPABASE_PROJECT_REF}" if SUPABASE_PROJECT_REF else "",
+)
 
-if not SUPABASE_HOST:
-    raise RuntimeError("Missing SUPABASE_HOST environment variable.")
+EMBEDDING_MODEL = os.getenv(
+    "OPENAI_EMBEDDING_MODEL",
+    "text-embedding-3-small",
+)
 
-if not SUPABASE_DB_PASSWORD:
-    raise RuntimeError("Missing SUPABASE_DB_PASSWORD environment variable.")
 
-client = OpenAI(api_key=OPENAI_API_KEY)
+def _validate_config() -> None:
+    required = {
+        "OPENAI_API_KEY": OPENAI_API_KEY,
+        "SUPABASE_HOST": SUPABASE_HOST,
+        "SUPABASE_DB_PASSWORD": SUPABASE_DB_PASSWORD,
+        "SUPABASE_PROJECT_REF": SUPABASE_PROJECT_REF,
+    }
+
+    missing = [name for name, value in required.items() if not value]
+
+    if missing:
+        raise RuntimeError(
+            "Missing required environment variables: "
+            + ", ".join(missing)
+        )
 
 
 # ---------------------------------------------------------------------------
-# Database helper
+# Clients / database
 # ---------------------------------------------------------------------------
+
+_client: OpenAI | None = None
+
+
+def _get_openai_client() -> OpenAI:
+    global _client
+
+    if _client is None:
+        if not OPENAI_API_KEY:
+            raise RuntimeError("OPENAI_API_KEY is not configured.")
+
+        _client = OpenAI(api_key=OPENAI_API_KEY)
+
+    return _client
+
+
 def _get_db_connection():
-    """Create a connection to the existing Supabase PostgreSQL database."""
-    return psycopg2.connect(
+    _validate_config()
+
+    conn = psycopg2.connect(
         host=SUPABASE_HOST,
-        port=5432,
-        database="postgres",
-        user=f"postgres.{PROJECT_REF}",
+        port=SUPABASE_PORT,
+        database=SUPABASE_DB,
+        user=SUPABASE_USER,
         password=SUPABASE_DB_PASSWORD,
     )
 
+    register_vector(conn)
+    return conn
+
 
 # ---------------------------------------------------------------------------
-# RAG retrieval tool
+# Embeddings
 # ---------------------------------------------------------------------------
-def search_government_information(query: str, limit: int = 3) -> list[dict[str, Any]]:
-    """
-    Search the government-information vector database.
 
-    The query is converted into an OpenAI embedding and matched against
-    the existing pgvector embeddings in the Supabase `documents` table.
 
-    Args:
-        query: Natural-language question or search phrase.
-        limit: Maximum number of matching document chunks to return.
+def _embed_query(query: str) -> list[float]:
+    client = _get_openai_client()
 
-    Returns:
-        A list of dictionaries containing the source title, retrieved
-        content, source URL, and cosine-similarity relevance score.
-    """
-    if not query or not query.strip():
-        raise ValueError("query must be a non-empty string.")
-
-    limit = max(1, min(int(limit), 10))
+    cleaned_query = query.replace("\n", " ").strip()
 
     response = client.embeddings.create(
-        input=[query.replace("\n", " ")],
-        model="text-embedding-3-small",
+        input=[cleaned_query],
+        model=EMBEDDING_MODEL,
     )
-    query_embedding = response.data[0].embedding
 
-    conn = _get_db_connection()
+    return response.data[0].embedding
+
+
+# ---------------------------------------------------------------------------
+# Main RAG retrieval function
+# ---------------------------------------------------------------------------
+
+
+def search_government_information(
+    query: str,
+    limit: int = 3,
+) -> list[dict[str, Any]]:
+    """
+    Search the FRSC / Nigeria Driver's Licence knowledge base.
+
+    Returns dictionaries containing:
+        source
+        content
+        url
+        relevance_score
+    """
+
+    if not isinstance(query, str) or not query.strip():
+        raise ValueError("query must be a non-empty string.")
+
+    if not isinstance(limit, int) or limit < 1:
+        raise ValueError("limit must be a positive integer.")
+
+    query_embedding = _embed_query(query)
+
+    conn = None
 
     try:
-        register_vector(conn)
-        cursor = conn.cursor()
+        conn = _get_db_connection()
 
-        cursor.execute(
-            """
-            SELECT
-                title,
-                context,
-                source_url,
-                (embedding <=> %s::vector) AS distance
-            FROM documents
-            ORDER BY distance ASC
-            LIMIT %s;
-            """,
-            (query_embedding, limit),
-        )
+        with conn.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT
+                    title,
+                    context,
+                    source_url,
+                    (embedding <=> %s::vector) AS distance
+                FROM documents
+                WHERE embedding IS NOT NULL
+                ORDER BY distance ASC
+                LIMIT %s;
+                """,
+                (query_embedding, limit),
+            )
 
-        rows = cursor.fetchall()
+            rows = cursor.fetchall()
 
         return [
             {
@@ -127,23 +171,28 @@ def search_government_information(query: str, limit: int = 3) -> list[dict[str, 
             for title, context, source_url, distance in rows
         ]
 
+    except Exception as exc:
+        raise RuntimeError(
+            f"Government information retrieval failed: {exc}"
+        ) from exc
+
     finally:
-        conn.close()
+        if conn is not None:
+            conn.close()
 
 
 # ---------------------------------------------------------------------------
-# OpenAI function-tool definition
+# OpenAI tool definition for the backend AI agent
 # ---------------------------------------------------------------------------
+
 GOVERNMENT_INFORMATION_TOOL = {
     "type": "function",
     "function": {
         "name": "search_government_information",
         "description": (
-            "Search the official Nigeria government-information database "
-            "for FAQs, procedures, portal guidance, regulations, and other "
-            "government-service information. Use this when the user asks "
-            "about government processes or information that should be "
-            "verified against the retrieved sources."
+            "Search the Nigeria Driver's Licence and FRSC knowledge base "
+            "for official process information and verified website "
+            "navigation instructions."
         ),
         "parameters": {
             "type": "object",
@@ -151,24 +200,16 @@ GOVERNMENT_INFORMATION_TOOL = {
                 "query": {
                     "type": "string",
                     "description": (
-                        "The specific question, search phrase, or keywords "
-                        "to look up in the government information database."
+                        "The user's question or navigation request."
                     ),
-                },
-                "limit": {
-                    "type": "integer",
-                    "description": "Number of matching document snippets to retrieve.",
-                    "default": 3,
-                    "minimum": 1,
-                    "maximum": 10,
-                },
+                }
             },
             "required": ["query"],
+            "additionalProperties": False,
         },
     },
 }
 
-# Convenient form for passing the tool list directly to an OpenAI request.
 GOV_TOOLS = [GOVERNMENT_INFORMATION_TOOL]
 
 
