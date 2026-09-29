@@ -1,3 +1,4 @@
+
 """
 ng_rag.py
 
@@ -6,19 +7,14 @@ Production-facing Nigeria Driver's Licence / FRSC RAG retrieval module.
 The Colab notebook remains responsible for crawling/scraping, navigation
 discovery, deduplication, chunking, embeddings, and Supabase ingestion.
 
-This module is responsible only for retrieval for the backend AI agent.
-
-Backend contract:
-    search_government_information(query: str, limit: int = 3)
+This module is responsible for retrieval and active copilot logic.
 """
 
 import os
 from typing import Any
-
 import psycopg2
 from openai import OpenAI
 from pgvector.psycopg2 import register_vector
-
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -41,6 +37,20 @@ EMBEDDING_MODEL = os.getenv(
     "text-embedding-3-small",
 )
 
+FORM_SCHEMAS = {
+    "Renewal Application Form": {
+        "fields": ["Driver's Licence Number", "Date of Birth"],
+        "description": "Used to retrieve existing bio-data from the FRSC database for verification before editing."
+    },
+    "New Driver's Licence Application Form": {
+        "fields": ["Driving School Certificate Number"],
+        "description": "Must be obtained from an accredited driving school first to unlock the registration flow."
+    },
+    "Track DL Application Status Form": {
+        "fields": ["Application ID", "Date of Birth"],
+        "description": "Required to retrieve progress and biometric status."
+    }
+}
 
 def _validate_config() -> None:
     required = {
@@ -49,15 +59,11 @@ def _validate_config() -> None:
         "SUPABASE_DB_PASSWORD": SUPABASE_DB_PASSWORD,
         "SUPABASE_PROJECT_REF": SUPABASE_PROJECT_REF,
     }
-
     missing = [name for name, value in required.items() if not value]
-
     if missing:
         raise RuntimeError(
-            "Missing required environment variables: "
-            + ", ".join(missing)
+            "Missing required environment variables: " + ", ".join(missing)
         )
-
 
 # ---------------------------------------------------------------------------
 # Clients / database
@@ -65,22 +71,16 @@ def _validate_config() -> None:
 
 _client: OpenAI | None = None
 
-
 def _get_openai_client() -> OpenAI:
     global _client
-
     if _client is None:
         if not OPENAI_API_KEY:
             raise RuntimeError("OPENAI_API_KEY is not configured.")
-
         _client = OpenAI(api_key=OPENAI_API_KEY)
-
     return _client
-
 
 def _get_db_connection():
     _validate_config()
-
     conn = psycopg2.connect(
         host=SUPABASE_HOST,
         port=SUPABASE_PORT,
@@ -88,33 +88,25 @@ def _get_db_connection():
         user=SUPABASE_USER,
         password=SUPABASE_DB_PASSWORD,
     )
-
     register_vector(conn)
     return conn
-
 
 # ---------------------------------------------------------------------------
 # Embeddings
 # ---------------------------------------------------------------------------
 
-
 def _embed_query(query: str) -> list[float]:
     client = _get_openai_client()
-
     cleaned_query = query.replace("\n", " ").strip()
-
     response = client.embeddings.create(
         input=[cleaned_query],
         model=EMBEDDING_MODEL,
     )
-
     return response.data[0].embedding
-
 
 # ---------------------------------------------------------------------------
 # Main RAG retrieval function
 # ---------------------------------------------------------------------------
-
 
 def search_government_information(
     query: str,
@@ -122,27 +114,16 @@ def search_government_information(
 ) -> list[dict[str, Any]]:
     """
     Search the FRSC / Nigeria Driver's Licence knowledge base.
-
-    Returns dictionaries containing:
-        source
-        content
-        url
-        relevance_score
     """
-
     if not isinstance(query, str) or not query.strip():
         raise ValueError("query must be a non-empty string.")
-
     if not isinstance(limit, int) or limit < 1:
         raise ValueError("limit must be a positive integer.")
 
     query_embedding = _embed_query(query)
-
     conn = None
-
     try:
         conn = _get_db_connection()
-
         with conn.cursor() as cursor:
             cursor.execute(
                 """
@@ -158,9 +139,7 @@ def search_government_information(
                 """,
                 (query_embedding, limit),
             )
-
             rows = cursor.fetchall()
-
         return [
             {
                 "source": title,
@@ -170,16 +149,66 @@ def search_government_information(
             }
             for title, context, source_url, distance in rows
         ]
-
     except Exception as exc:
         raise RuntimeError(
             f"Government information retrieval failed: {exc}"
         ) from exc
-
     finally:
         if conn is not None:
             conn.close()
 
+# ---------------------------------------------------------------------------
+# Interactive Agent Loop with Form-Filling & Direct Action constraints
+# ---------------------------------------------------------------------------
+
+def run_driver_licence_agent(user_query: str) -> str:
+    """
+    Core Driver's Licence Agent Loop.
+    Resolves queries directly, avoids telling users to 'follow instructions',
+    and prompts dynamically for feedback when forms or ambiguities are present.
+    """
+    # 1. Fetch relevant knowledge context from database
+    try:
+        retrieved_docs = search_government_information(query=user_query, limit=3)
+    except Exception as e:
+        retrieved_docs = []
+
+    context_blocks = []
+    if isinstance(retrieved_docs, list):
+        for doc in retrieved_docs:
+            context_blocks.append(f"Source: {doc['source']}\nContext:\n{doc['content']}")
+    combined_context = "\n\n---\n\n".join(context_blocks)
+
+    # 2. System instructions forcing direct actions
+    system_prompt = f"""You are the Federal Road Safety Corps (FRSC) Virtual Copilot.
+Your goal is to answer queries directly and provide clear, actionable navigation paths.
+
+CRITICAL CONSTRAINTS:
+1. Speak directly to the user as their helpful copilot.
+2. Do NOT say 'follow the instructions' or 'please proceed according to instructions'. Provide the actual steps yourself!
+3. If a form is detected (such as Renewal, New Application, or Tracking), identify which fields are required and offer to help them prepare or fill them.
+
+Known Form Schema Information:
+{FORM_SCHEMAS}
+"""
+
+    try:
+        client = _get_openai_client()
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": f"User Query: {user_query}\n\nRetrieved Context:\n{combined_context}"}
+            ],
+            temperature=0.2
+        )
+        result_text = response.choices[0].message.content
+        print(result_text)
+        return result_text
+    except Exception as e:
+        error_msg = f"Agent execution failed: {str(e)}"
+        print(error_msg)
+        return error_msg
 
 # ---------------------------------------------------------------------------
 # OpenAI tool definition for the backend AI agent
@@ -212,9 +241,10 @@ GOVERNMENT_INFORMATION_TOOL = {
 
 GOV_TOOLS = [GOVERNMENT_INFORMATION_TOOL]
 
-
 __all__ = [
     "search_government_information",
+    "run_driver_licence_agent",
+    "FORM_SCHEMAS",
     "GOVERNMENT_INFORMATION_TOOL",
     "GOV_TOOLS",
 ]
