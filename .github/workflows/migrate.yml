@@ -32,6 +32,6 @@ jobs:
       - name: Build Database Tables
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          JWT_SECRET: "dummy_migration_secret_key_123"
+          JWT_SECRET: "super_secure_dummy_jwt_secret_key_that_is_definitely_long_enough_123456789"
         run: |
           alembic upgrade head
