@@ -121,6 +121,7 @@ app.add_middleware(BodyLimitMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins,
+    allow_origin_regex=settings.cors_extension_origin_regex,
     allow_credentials=True,
     allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type"],

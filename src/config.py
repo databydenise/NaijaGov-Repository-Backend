@@ -194,6 +194,21 @@ class Settings(BaseSettings):
         return [origin for origin in (self.web_origin, self.extension_origin) if origin]
 
     @cached_property
+    def cors_extension_origin_regex(self) -> str:
+        """
+        Matches any extension id, in every environment.
+
+        An unpacked extension gets a new `chrome-extension://<id>` origin every reload, so
+        pinning `extension_origin` in `.env` means re-editing it constantly in dev. Starlette
+        echoes back the actual matched origin here, never a literal `*`, so this stays
+        technically compatible with `allow_credentials=True` — but unlike a per-origin
+        allowlist, it accepts a credentialed request from *any* Chrome extension id, not just
+        ours, including in production. Kept on in prod at the user's explicit choice
+        (2026-09-30); a published extension normally has a fixed id and would not need this.
+        """
+        return r"chrome-extension://.*"
+
+    @cached_property
     def extra_supported_hosts(self) -> list[str]:
         """The dev hosts, or nothing in production."""
         if self.env == "production":
