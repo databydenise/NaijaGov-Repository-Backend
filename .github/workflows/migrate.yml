@@ -29,9 +29,9 @@ jobs:
             pip install fastapi alembic sqlalchemy pgvector asyncpg pydantic-settings passlib bcrypt python-jose
           fi
 
-      - name: Build Database Tables
+      - name: Stamp Database History
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           JWT_SECRET: "super_secure_dummy_jwt_secret_key_that_is_definitely_long_enough_123456789"
         run: |
-          alembic upgrade head
+          alembic stamp head
