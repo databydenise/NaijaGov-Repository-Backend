@@ -6,6 +6,7 @@ on:
 jobs:
   migrate:
     runs-on: ubuntu-latest
+
     steps:
       - uses: actions/checkout@v4
 
@@ -13,23 +14,24 @@ jobs:
         with:
           python-version: '3.13'
 
-      - name: Force Install Dependencies
+      - name: Install Dependencies
         run: |
           python -m pip install --upgrade pip
           if [ -f "pyproject.toml" ]; then
-            pip install poetry 
-            poetry config virtualenvs.create false 
+            pip install poetry
+            poetry config virtualenvs.create false
             poetry install --no-root
           elif [ -f "Pipfile" ]; then
-            pip install pipenv && pipenv install --system
+            pip install pipenv
+            pipenv install --system
           elif ls *requirements*.txt 1> /dev/null 2>&1; then
             cat *requirements*.txt | xargs pip install
           else
-            echo "Brute forcing core dependencies..."
-            pip install fastapi alembic sqlalchemy pgvector asyncpg pydantic-settings passlib bcrypt python-jose
+            echo "Installing core dependencies..."
+            pip install fastapi alembic sqlalchemy pgvector asyncpg pydantic-settings passlib bcrypt python-jose psycopg
           fi
 
-            - name: Check Migration State
+      - name: Check Migration State
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: |
@@ -45,9 +47,6 @@ jobs:
           from sqlalchemy import create_engine, text
 
           url = os.environ["DATABASE_URL"]
-
-          # Alembic/SQLAlchemy may expect a sync URL here.
-          # Convert asyncpg URL to psycopg2 if necessary.
           url = url.replace("postgresql+asyncpg://", "postgresql://")
 
           engine = create_engine(url)
