@@ -29,9 +29,47 @@ jobs:
             pip install fastapi alembic sqlalchemy pgvector asyncpg pydantic-settings passlib bcrypt python-jose
           fi
 
-      - name: Stamp Database History
+            - name: Check Migration State
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          JWT_SECRET: "super_secure_dummy_jwt_secret_key_that_is_definitely_long_enough_123456789"
         run: |
-          alembic stamp head
+          echo "=== Alembic current ==="
+          alembic current
+
+          echo "=== Alembic heads ==="
+          alembic heads
+
+          echo "=== Checking database tables ==="
+          python - <<'PY'
+          import os
+          from sqlalchemy import create_engine, text
+
+          url = os.environ["DATABASE_URL"]
+
+          # Alembic/SQLAlchemy may expect a sync URL here.
+          # Convert asyncpg URL to psycopg2 if necessary.
+          url = url.replace("postgresql+asyncpg://", "postgresql://")
+
+          engine = create_engine(url)
+
+          with engine.connect() as conn:
+              for table in [
+                  "users",
+                  "extension_tokens",
+                  "documents",
+                  "profiles",
+                  "workflows",
+              ]:
+                  result = conn.execute(
+                      text("SELECT to_regclass(:table)"),
+                      {"table": f"public.{table}"},
+                  ).scalar()
+
+                  print(f"{table}: {result}")
+          PY
+
+      - name: Run Alembic Migrations
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          alembic upgrade head
