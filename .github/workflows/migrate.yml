@@ -22,9 +22,11 @@ jobs:
       - name: Check Migration State
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          JWT_SECRET: ${{ secrets.JWT_SECRET }}
         run: alembic current && alembic heads
 
       - name: Run Alembic Migrations
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          JWT_SECRET: ${{ secrets.JWT_SECRET }}
         run: alembic upgrade head
